@@ -8,14 +8,14 @@ import {
   Loader2,
 } from "lucide-react"
 
-const GITHUB_URL = "https://github.com/iameterna00/instax-agent"
+const GITHUB_URL = "https://github.com/iameterna00/instaxagent"
 
 export function LandingPage() {
   const [stars, setStars] = useState<number | null>(null)
   const router = useRouter()
 
   useEffect(() => {
-    fetch("https://api.github.com/repos/iameterna00/instax-agent")
+    fetch("https://api.github.com/repos/iameterna00/instaxagent")
       .then(r => r.json())
       .then(d => { if (typeof d.stargazers_count === "number") setStars(d.stargazers_count) })
       .catch(() => {})

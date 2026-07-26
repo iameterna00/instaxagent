@@ -50,8 +50,8 @@ schema.sql                       Database schema
 ## Quick start
 
 ```bash
-git clone https://github.com/iameterna00/instax-agent.git
-cd instax-agent
+git clone https://github.com/iameterna00/instaxagent.git
+cd instaxagent
 npm install
 cp .env.example .env
 # fill in .env, then:

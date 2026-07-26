@@ -71,7 +71,7 @@ Visit http://localhost:3000. In development a **Dev Login** button appears, whic
 
 ## 4. Vercel — deploy the app
 
-1. Go to [vercel.com/new](https://vercel.com/new) and import `iameterna00/instax-agent`.
+1. Go to [vercel.com/new](https://vercel.com/new) and import `iameterna00/instaxagent`.
 2. Framework preset: **Next.js** (auto-detected). Don't change the build settings.
 3. Before deploying, expand **Environment Variables** and add every variable from your `.env`, with one change:
 
@@ -79,7 +79,7 @@ Visit http://localhost:3000. In development a **Dev Login** button appears, whic
    NEXT_PUBLIC_INSTAGRAM_REDIRECT_URI=https://YOUR-APP.vercel.app/api/instagram/callback
    ```
 
-   You won't know the final domain until after the first deploy — use your best guess (Vercel usually gives you `instax-agent.vercel.app`), then correct it in step 6 if it differs.
+   You won't know the final domain until after the first deploy — use your best guess (Vercel usually gives you `instaxagent.vercel.app`), then correct it in step 6 if it differs.
 4. **Deploy.**
 5. Note your production URL.
 6. If the domain differs from your guess: **Settings → Environment Variables**, fix `NEXT_PUBLIC_INSTAGRAM_REDIRECT_URI`, then **Deployments → ⋯ → Redeploy**. Environment variable changes do not take effect until you redeploy.
