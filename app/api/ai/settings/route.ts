@@ -12,6 +12,24 @@ function toPublicSettings(settings: ReturnType<typeof normalizeSettings>) {
   return { ...rest, has_api_key: Boolean(api_key) }
 }
 
+/**
+ * Turn a Supabase/Postgres failure into something the panel can show, so setup
+ * mistakes are self-diagnosing instead of a flat "failed to save".
+ */
+function describeFailure(error: any, verb: "load" | "save"): string {
+  const message: string = error?.message || String(error)
+
+  if (message.includes("Supabase is not configured")) return message
+  // 42P01 undefined_table, 42703 undefined_column
+  if (error?.code === "42P01" || /relation .*ai_settings.* does not exist/i.test(message)) {
+    return "The ai_settings table is missing — run scripts/09-ai-agent.sql in Supabase."
+  }
+  if (error?.code === "42703") {
+    return `Database is out of date (${message}) — run scripts/09-ai-agent.sql in Supabase.`
+  }
+  return `Could not ${verb} AI settings: ${message}`
+}
+
 function clamp(value: any, min: number, max: number, fallback: number): number {
   const n = Number(value)
   if (!Number.isFinite(n)) return fallback
@@ -24,7 +42,12 @@ export async function GET(request: NextRequest) {
     if (!userId) return NextResponse.json({ error: "Missing userId" }, { status: 400 })
 
     const supabase = await getSupabaseServerClient()
-    const { data } = await supabase.from("ai_settings").select("*").eq("user_id", userId).single()
+    const { data, error } = await supabase.from("ai_settings").select("*").eq("user_id", userId).single()
+
+    // PGRST116 = no row matched, which is normal for a user who hasn't set the
+    // agent up yet. Anything else (missing table, bad credentials) is a real
+    // fault and must not be disguised as "not configured yet".
+    if (error && error.code !== "PGRST116") throw error
 
     if (!data) {
       // No row yet — hand back the defaults so the form has something to render.
@@ -37,9 +60,9 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json(toPublicSettings(normalizeSettings(data)))
-  } catch (error) {
+  } catch (error: any) {
     console.error("[ai-settings] GET error:", error)
-    return NextResponse.json({ error: "Failed to load AI settings" }, { status: 500 })
+    return NextResponse.json({ error: describeFailure(error, "load") }, { status: 500 })
   }
 }
 
@@ -50,7 +73,13 @@ export async function PUT(request: NextRequest) {
     if (!userId) return NextResponse.json({ error: "Missing userId" }, { status: 400 })
 
     const supabase = await getSupabaseServerClient()
-    const { data: existing } = await supabase.from("ai_settings").select("*").eq("user_id", userId).single()
+    const { data: existing, error: readError } = await supabase
+      .from("ai_settings")
+      .select("*")
+      .eq("user_id", userId)
+      .single()
+
+    if (readError && readError.code !== "PGRST116") throw readError
     const current = existing ? normalizeSettings(existing) : { ...DEFAULT_AI_SETTINGS, user_id: Number(userId) }
 
     const provider = isKnownProvider(body.provider) ? body.provider : current.provider
@@ -111,8 +140,8 @@ export async function PUT(request: NextRequest) {
 
     if (error) throw error
     return NextResponse.json(toPublicSettings(normalizeSettings(data)))
-  } catch (error) {
+  } catch (error: any) {
     console.error("[ai-settings] PUT error:", error)
-    return NextResponse.json({ error: "Failed to save AI settings" }, { status: 500 })
+    return NextResponse.json({ error: describeFailure(error, "save") }, { status: 500 })
   }
 }

@@ -8,7 +8,19 @@ import { cookies } from "next/headers"
 export async function getSupabaseServerClient() {
   const cookieStore = await cookies()
 
-  return createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  // Without these the client still constructs, then every query fails with an
+  // opaque network error. Say what is actually wrong instead.
+  if (!url || !serviceKey) {
+    const missing = [!url && "NEXT_PUBLIC_SUPABASE_URL", !serviceKey && "SUPABASE_SERVICE_ROLE_KEY"]
+      .filter(Boolean)
+      .join(", ")
+    throw new Error(`Supabase is not configured — missing ${missing} in your .env`)
+  }
+
+  return createServerClient(url, serviceKey, {
     cookies: {
       getAll: async () => cookieStore.getAll(),
       setAll: async (cookiesToSet) => {
