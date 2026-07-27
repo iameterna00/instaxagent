@@ -29,8 +29,16 @@ CREATE TABLE IF NOT EXISTS public.content_plans (
   ideas JSONB NOT NULL DEFAULT '[]'::jsonb,
   posts_analyzed INTEGER NOT NULL DEFAULT 0,
 
+  -- snapshot of the posts (thumbnail, permalink, views/reach) the plan was built
+  -- from, so a saved plan still renders its evidence later
+  posts JSONB NOT NULL DEFAULT '[]'::jsonb,
+
   created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Added after the first release — keeps existing installs in step.
+ALTER TABLE public.content_plans
+  ADD COLUMN IF NOT EXISTS posts JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 CREATE INDEX IF NOT EXISTS idx_content_plans_user_created
   ON public.content_plans(user_id, created_at DESC);

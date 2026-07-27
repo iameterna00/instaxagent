@@ -24,7 +24,15 @@ export function LandingPage() {
   const handleLogin = () => {
     // Instagram Business Login (Instagram API with Instagram Login). client_id must be the
     // Instagram app ID from the Instagram product page, not the parent Meta app ID.
-    window.location.href = `https://www.instagram.com/oauth/authorize?enable_fb_login=0&force_authentication=1&client_id=${process.env.NEXT_PUBLIC_INSTAGRAM_APP_ID}&redirect_uri=${process.env.NEXT_PUBLIC_INSTAGRAM_REDIRECT_URI}&response_type=code&scope=instagram_business_basic%2Cinstagram_business_manage_messages%2Cinstagram_business_manage_comments`
+    // manage_insights powers view/reach counts in the Content Studio; accounts that
+    // logged in before it was added must reconnect for those numbers to appear.
+    const scope = [
+      "instagram_business_basic",
+      "instagram_business_manage_messages",
+      "instagram_business_manage_comments",
+      "instagram_business_manage_insights",
+    ].join(",")
+    window.location.href = `https://www.instagram.com/oauth/authorize?enable_fb_login=0&force_authentication=1&client_id=${process.env.NEXT_PUBLIC_INSTAGRAM_APP_ID}&redirect_uri=${process.env.NEXT_PUBLIC_INSTAGRAM_REDIRECT_URI}&response_type=code&scope=${encodeURIComponent(scope)}`
   }
 
   const handleTestLogin = () => {

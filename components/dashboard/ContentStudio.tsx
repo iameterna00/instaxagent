@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react"
 import {
-    Loader2, Wand2, Copy, Check, Trash2, ChevronDown, Target, History, AlertTriangle,
+    Loader2, Wand2, Copy, Check, Trash2, ChevronDown, Target, History, AlertTriangle, Eye, Film,
 } from "lucide-react"
-import type { ContentIdea, ContentAnalysis } from "@/lib/ai/content"
+import type { ContentIdea, ContentAnalysis, OwnPost } from "@/lib/ai/content"
 
 interface ContentPlan {
     id: string
@@ -17,8 +17,91 @@ interface ContentPlan {
     model: string | null
     analysis: ContentAnalysis | null
     ideas: ContentIdea[]
+    posts: OwnPost[] | null
     posts_analyzed: number
     created_at: string
+}
+
+function compact(n: number): string {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}K`
+    return String(n)
+}
+
+/** The posts the plan was built from — highest reach first, so the evidence is visible. */
+function AnalyzedPosts({ posts }: { posts: OwnPost[] }) {
+    const [expanded, setExpanded] = useState(false)
+    const hasViews = posts.some(p => p.views !== undefined || p.reach !== undefined)
+
+    const ranked = [...posts].sort((a, b) => (b.views ?? b.reach ?? 0) - (a.views ?? a.reach ?? 0))
+    const shown = expanded ? ranked : ranked.slice(0, 8)
+
+    return (
+        <div className="rounded-2xl border border-white/10 bg-[#0b0b0a] p-6 space-y-4">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+                <span className={label}>
+                    {hasViews ? "Your posts, best performing first" : "Posts it read"}
+                </span>
+                <span className="text-[10px] text-neutral-600">{posts.length} analysed</span>
+            </div>
+
+            {!hasViews && (
+                <p className="text-[11px] text-neutral-500 flex items-start gap-1.5">
+                    <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0 text-neutral-600" />
+                    No view or reach numbers came back — reconnect your Instagram account from the login screen to grant
+                    insights access, then regenerate for performance-aware analysis.
+                </p>
+            )}
+
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                {shown.map((post, i) => {
+                    const thumb = post.thumbnail_url || post.media_url
+                    const metric = post.views ?? post.reach
+                    return (
+                        <a
+                            key={post.id ?? i}
+                            href={post.permalink}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={post.caption?.slice(0, 160) || "View on Instagram"}
+                            className="group relative aspect-square rounded-lg overflow-hidden border border-white/10 bg-white/[0.03] hover:border-[#ffe14d]/40 transition-colors"
+                        >
+                            {thumb ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={thumb} alt="" className="w-full h-full object-cover" loading="lazy" />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center">
+                                    <Film className="w-4 h-4 text-neutral-700" />
+                                </div>
+                            )}
+
+                            {post.media_product_type === "REELS" && (
+                                <Film className="absolute top-1.5 right-1.5 w-3 h-3 text-white drop-shadow" />
+                            )}
+
+                            {metric !== undefined && (
+                                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent px-1.5 pt-4 pb-1.5">
+                                    <span className="flex items-center gap-1 text-[10px] font-semibold text-white">
+                                        <Eye className="w-2.5 h-2.5" />
+                                        {compact(metric)}
+                                    </span>
+                                </div>
+                            )}
+                        </a>
+                    )
+                })}
+            </div>
+
+            {ranked.length > 8 && (
+                <button
+                    onClick={() => setExpanded(!expanded)}
+                    className="text-[11px] font-mono-ui uppercase tracking-widest text-neutral-500 hover:text-[#ffe14d] transition-colors"
+                >
+                    {expanded ? "Show less" : `Show all ${ranked.length}`}
+                </button>
+            )}
+        </div>
+    )
 }
 
 const FORMATS = ["reel", "carousel", "story", "post"]
@@ -350,6 +433,8 @@ export function ContentStudio({ userId }: { userId: string }) {
             {/* Result */}
             {plan && (
                 <div className="space-y-6">
+                    {plan.posts && plan.posts.length > 0 && <AnalyzedPosts posts={plan.posts} />}
+
                     {plan.analysis && (
                         <div className="rounded-2xl border border-[#ffe14d]/20 bg-[#ffe14d]/[0.04] p-6 space-y-4">
                             <div className="flex items-center justify-between gap-4 flex-wrap">

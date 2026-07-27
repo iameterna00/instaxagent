@@ -7,12 +7,25 @@ import { generateReply } from "./providers"
 // ============================================================
 
 export interface OwnPost {
+  id?: string
   caption?: string
   media_type?: string
+  media_product_type?: string
   timestamp?: string
   like_count?: number
   comments_count?: number
   permalink?: string
+  thumbnail_url?: string
+  media_url?: string
+  /** Insights — only present when the account granted manage_insights. */
+  views?: number
+  reach?: number
+  saved?: number
+  shares?: number
+}
+
+export function isReel(post: OwnPost): boolean {
+  return post.media_product_type === "REELS" || post.media_type === "VIDEO"
 }
 
 export interface ContentRequest {
@@ -88,17 +101,30 @@ function describeOwnPosts(posts: OwnPost[]): string {
     return "No posts available from their account. Base your analysis on the stated goal and niche alone, and say so in the analysis."
   }
 
+  const hasViews = posts.some((p) => p.views !== undefined)
+
   const lines = posts.slice(0, 25).map((post, i) => {
     const caption = (post.caption ?? "").replace(/\s+/g, " ").trim().slice(0, 220)
-    const engagement =
-      post.like_count !== undefined || post.comments_count !== undefined
-        ? ` | ${post.like_count ?? "?"} likes, ${post.comments_count ?? "?"} comments`
-        : ""
+    const kind = post.media_product_type === "REELS" ? "REEL" : post.media_type ?? "POST"
     const date = post.timestamp ? new Date(post.timestamp).toISOString().slice(0, 10) : "unknown date"
-    return `${i + 1}. [${post.media_type ?? "POST"} · ${date}${engagement}] ${caption || "(no caption)"}`
+
+    const stats = [
+      post.views !== undefined ? `${post.views} views` : null,
+      post.reach !== undefined ? `${post.reach} reach` : null,
+      post.like_count !== undefined ? `${post.like_count} likes` : null,
+      post.comments_count !== undefined ? `${post.comments_count} comments` : null,
+      post.saved !== undefined ? `${post.saved} saves` : null,
+      post.shares !== undefined ? `${post.shares} shares` : null,
+    ].filter(Boolean)
+
+    return `${i + 1}. [${kind} · ${date}${stats.length ? ` · ${stats.join(", ")}` : ""}] ${caption || "(no caption)"}`
   })
 
-  return lines.join("\n")
+  const guidance = hasViews
+    ? "\n\nView and reach numbers are real. Compare posts against each other — name the specific posts that outperformed and say what they had in common. Do not treat a high view count as success if the goal needs conversions rather than reach."
+    : "\n\nNo view/reach data was available for this account, so judge on captions, formats and posting patterns only. Say plainly in the analysis that performance data was not available."
+
+  return lines.join("\n") + guidance
 }
 
 export function buildContentPrompt(request: ContentRequest, posts: OwnPost[], username: string): string {
