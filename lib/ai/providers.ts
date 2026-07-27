@@ -26,6 +26,11 @@ export interface GenerateArgs {
   systemPrompt: string
   history: ChatTurn[]
   maxTokens?: number
+  /**
+   * How hard the model should think. DM replies are short and latency-sensitive
+   * ("low"); content planning is worth the extra reasoning ("high").
+   */
+  effort?: "low" | "medium" | "high"
 }
 
 export interface GenerateResult {
@@ -52,9 +57,11 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
   if (!apiKey) return { ok: false, error: "No API key configured" }
   if (!history.length) return { ok: false, error: "No conversation history to reply to" }
 
+  const effort = args.effort ?? "low"
+
   try {
     if (provider === "anthropic") {
-      return await generateAnthropic({ apiKey, model, systemPrompt, history, maxTokens })
+      return await generateAnthropic({ apiKey, model, systemPrompt, history, maxTokens, effort })
     }
     return await generateOpenAiCompatible({ provider, apiKey, model, systemPrompt, history, maxTokens })
   } catch (e: any) {
@@ -73,6 +80,7 @@ async function generateAnthropic(opts: {
   systemPrompt: string
   history: ChatTurn[]
   maxTokens: number
+  effort: "low" | "medium" | "high"
 }): Promise<GenerateResult> {
   const client = new Anthropic({ apiKey: opts.apiKey, maxRetries: 1 })
 
@@ -83,10 +91,10 @@ async function generateAnthropic(opts: {
     messages: opts.history.map((t) => ({ role: t.role, content: t.content })),
   }
 
-  // DM replies are short and latency-sensitive, so we ask for shallow thinking
-  // rather than turning thinking off (disabling it degrades output quality).
+  // Prefer shallow thinking over no thinking — disabling it outright degrades
+  // output quality, whereas a low effort setting just keeps it brief.
   if (supportsEffort(opts.model)) {
-    ;(params as any).output_config = { effort: "low" }
+    ;(params as any).output_config = { effort: opts.effort }
   }
 
   const response = await client.messages.create(params)

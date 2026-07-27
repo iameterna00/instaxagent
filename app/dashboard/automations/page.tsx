@@ -12,10 +12,9 @@ export default function AutomationsPage() {
     const { userId, isLoading: isSessionLoading } = useInstagramSession()
     const [automations, setAutomations] = useState<Automation[]>([])
     const [isLoading, setIsLoading] = useState(true)
-    const [activeTab, setActiveTab] = useState<'comment' | 'dm' | 'story'>('comment')
+    const [activeTab, setActiveTab] = useState<'comment' | 'dm' | 'story' | 'ai'>('comment')
     const [showCreateForm, setShowCreateForm] = useState(false)
     const [editRule, setEditRule] = useState<Automation | null>(null)
-    const [showAiPanel, setShowAiPanel] = useState(false)
     const [aiEnabled, setAiEnabled] = useState(false)
 
     const fetchAutomations = useCallback(async () => {
@@ -68,7 +67,12 @@ export default function AutomationsPage() {
         { key: 'comment' as const, icon: <MessageCircle className="w-4 h-4" />, label: 'Comments', count: counts.comment },
         { key: 'dm' as const, icon: <Send className="w-4 h-4" />, label: 'DMs', count: counts.dm },
         { key: 'story' as const, icon: <Sparkles className="w-4 h-4" />, label: 'Stories', count: counts.story },
+        { key: 'ai' as const, icon: <Brain className="w-4 h-4" />, label: 'AI Agent', count: 0 },
     ]
+
+    const isAiTab = activeTab === 'ai'
+    // The AI tab isn't a rule source — fall back to a real one for the rule form.
+    const ruleTab = isAiTab ? 'comment' : activeTab
 
     return (
         <div className="min-h-screen bg-black">
@@ -79,20 +83,7 @@ export default function AutomationsPage() {
                         <p className="font-mono-ui text-[10px] uppercase tracking-[0.3em] text-neutral-600 mb-2">Rules engine</p>
                         <h1 className="font-serif-display text-4xl md:text-5xl text-white leading-none">Automations</h1>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => setShowAiPanel(!showAiPanel)}
-                            className={`flex items-center gap-2 h-9 px-4 rounded-full font-mono-ui text-[11px] font-bold uppercase tracking-widest transition-colors border ${
-                                showAiPanel
-                                    ? 'border-white/20 text-white'
-                                    : aiEnabled
-                                        ? 'bg-[#ffe14d]/10 border-[#ffe14d]/40 text-[#ffe14d]'
-                                        : 'border-white/10 text-neutral-500 hover:text-white hover:border-white/30'
-                            }`}
-                        >
-                            <Brain className="w-3.5 h-3.5" />
-                            {showAiPanel ? 'Close AI' : aiEnabled ? 'AI Agent · On' : 'AI Agent'}
-                        </button>
+                    {!isAiTab && (
                         <button
                             onClick={() => {
                                 if (showCreateForm) setEditRule(null)
@@ -107,15 +98,8 @@ export default function AutomationsPage() {
                             <Plus className={`w-4 h-4 transition-transform duration-200 ${showCreateForm ? 'rotate-45' : ''}`} />
                             {showCreateForm ? 'Close' : 'New Rule'}
                         </button>
-                    </div>
+                    )}
                 </div>
-
-                {/* AI Agent Panel */}
-                {showAiPanel && (
-                    <div className="animate-in fade-in slide-in-from-top-2 duration-200">
-                        <AiAgentPanel userId={userId} onEnabledChange={setAiEnabled} />
-                    </div>
-                )}
 
                 {/* Tabs — editorial underline */}
                 <div className="flex items-center gap-6 border-b border-white/10">
@@ -131,47 +115,60 @@ export default function AutomationsPage() {
                         >
                             {tab.icon}
                             <span>{tab.label}</span>
-                            {tab.count > 0 && (
+                            {tab.key === 'ai' ? (
+                                // On/off at a glance, so the agent's state is never a surprise.
+                                <span
+                                    title={aiEnabled ? 'AI agent is on' : 'AI agent is off'}
+                                    className={`w-1.5 h-1.5 rounded-full ${
+                                        aiEnabled ? 'bg-[#ffe14d] shadow-[0_0_6px_#ffe14d]' : 'bg-neutral-700'
+                                    }`}
+                                />
+                            ) : tab.count > 0 ? (
                                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
                                     activeTab === tab.key ? 'bg-[#ffe14d] text-black' : 'bg-white/10 text-neutral-400'
                                 }`}>
                                     {tab.count}
                                 </span>
-                            )}
+                            ) : null}
                         </button>
                     ))}
                 </div>
 
-                {/* Create Form (Collapsible) */}
-                {showCreateForm && (
-                    <div className="rounded-2xl border border-white/10 bg-[#0b0b0a] p-6 md:p-8 animate-in fade-in slide-in-from-top-2 duration-300">
-                        <CreateRuleForm
-                            userId={userId}
-                            triggerSource={editRule ? editRule.trigger_source : activeTab}
-                            editRule={editRule}
-                            onSuccess={() => {
-                                fetchAutomations()
-                                setShowCreateForm(false)
-                                setEditRule(null)
-                            }}
-                        />
-                    </div>
-                )}
-
-
-                {/* Automation List */}
-                {isLoading ? (
-                    <div className="flex items-center justify-center py-16">
-                        <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                    </div>
+                {isAiTab ? (
+                    <AiAgentPanel userId={userId} onEnabledChange={setAiEnabled} />
                 ) : (
-                    <AutomationList
-                        automations={filteredAutomations}
-                        onDelete={handleDeleteRule}
-                        onEdit={handleEditRule}
-                        onChanged={fetchAutomations}
-                        userId={userId}
-                    />
+                    <>
+                        {/* Create Form (Collapsible) */}
+                        {showCreateForm && (
+                            <div className="rounded-2xl border border-white/10 bg-[#0b0b0a] p-6 md:p-8 animate-in fade-in slide-in-from-top-2 duration-300">
+                                <CreateRuleForm
+                                    userId={userId}
+                                    triggerSource={editRule ? editRule.trigger_source : ruleTab}
+                                    editRule={editRule}
+                                    onSuccess={() => {
+                                        fetchAutomations()
+                                        setShowCreateForm(false)
+                                        setEditRule(null)
+                                    }}
+                                />
+                            </div>
+                        )}
+
+                        {/* Automation List */}
+                        {isLoading ? (
+                            <div className="flex items-center justify-center py-16">
+                                <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                            </div>
+                        ) : (
+                            <AutomationList
+                                automations={filteredAutomations}
+                                onDelete={handleDeleteRule}
+                                onEdit={handleEditRule}
+                                onChanged={fetchAutomations}
+                                userId={userId}
+                            />
+                        )}
+                    </>
                 )}
             </div>
         </div>

@@ -160,19 +160,45 @@ export function AiAgentPanel({ userId, onEnabledChange }: AiAgentPanelProps) {
                         </p>
                     </div>
                 </div>
-                <button
-                    onClick={() => save({ is_enabled: !draft.is_enabled })}
-                    disabled={saving || (!draft.is_enabled && !canEnable)}
-                    title={!canEnable ? "Add an API key first" : undefined}
-                    className={`flex items-center gap-2 h-9 px-4 rounded-full font-mono-ui text-[11px] font-bold uppercase tracking-widest transition-colors disabled:opacity-40 ${
-                        draft.is_enabled
-                            ? "bg-[#ffe14d]/10 border border-[#ffe14d]/40 text-[#ffe14d]"
-                            : "border border-white/10 text-neutral-500 hover:text-white hover:border-white/30"
+                {/* Master switch. Deliberately loud — an agent that is saved but
+                    switched off looks identical to a broken one. */}
+                <div
+                    className={`flex items-center gap-3 rounded-2xl border px-4 py-3 transition-colors ${
+                        draft.is_enabled ? "border-[#ffe14d]/40 bg-[#ffe14d]/[0.07]" : "border-white/10 bg-white/[0.02]"
                     }`}
                 >
-                    <Sparkles className={`w-3.5 h-3.5 ${saving ? "animate-pulse" : ""}`} />
-                    {draft.is_enabled ? "AI ON" : "AI OFF"}
-                </button>
+                    <div className="text-right">
+                        <div
+                            className={`font-mono-ui text-[11px] font-bold uppercase tracking-widest ${
+                                draft.is_enabled ? "text-[#ffe14d]" : "text-neutral-500"
+                            }`}
+                        >
+                            {draft.is_enabled ? "Agent on" : "Agent off"}
+                        </div>
+                        <div className="text-[10px] text-neutral-600 mt-0.5">
+                            {draft.is_enabled ? "Replying to DMs" : "Not replying"}
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => save({ is_enabled: !draft.is_enabled })}
+                        disabled={saving || (!draft.is_enabled && !canEnable)}
+                        title={!canEnable ? "Add an API key first" : draft.is_enabled ? "Turn the agent off" : "Turn the agent on"}
+                        aria-pressed={draft.is_enabled}
+                        className={`shrink-0 w-14 h-8 rounded-full transition-colors relative disabled:opacity-40 disabled:cursor-not-allowed ${
+                            draft.is_enabled ? "bg-[#ffe14d]" : "bg-white/10"
+                        }`}
+                    >
+                        <span
+                            className={`absolute top-1 w-6 h-6 rounded-full bg-black flex items-center justify-center transition-transform ${
+                                draft.is_enabled ? "translate-x-7" : "translate-x-1"
+                            }`}
+                        >
+                            {saving
+                                ? <Loader2 className="w-3 h-3 text-white animate-spin" />
+                                : <Sparkles className={`w-3 h-3 ${draft.is_enabled ? "text-[#ffe14d]" : "text-neutral-500"}`} />}
+                        </span>
+                    </button>
+                </div>
             </div>
 
             {/* Provider + model + key */}
