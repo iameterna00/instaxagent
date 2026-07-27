@@ -46,11 +46,20 @@ function AnalyzedPosts({ posts }: { posts: OwnPost[] }) {
             </div>
 
             {!hasViews && (
-                <p className="text-[11px] text-neutral-500 flex items-start gap-1.5">
+                <div className="text-[11px] text-neutral-500 flex items-start gap-1.5">
                     <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0 text-neutral-600" />
-                    No view or reach numbers came back — reconnect your Instagram account from the login screen to grant
-                    insights access, then regenerate for performance-aware analysis.
-                </p>
+                    <span>
+                        No view or reach numbers came back, so this plan was built from captions and formats only. To fix
+                        it, both steps are needed:
+                        <span className="block mt-1.5 text-neutral-400">
+                            1. In your Meta app dashboard → Instagram API → Customize use case, add the{" "}
+                            <code className="text-[#ffe14d]">instagram_business_manage_insights</code> permission.
+                        </span>
+                        <span className="block mt-0.5 text-neutral-400">
+                            2. Log out and reconnect Instagram so the new token carries it, then regenerate.
+                        </span>
+                    </span>
+                </div>
             )}
 
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
@@ -233,6 +242,8 @@ export function ContentStudio({ userId }: { userId: string }) {
 
     const [generating, setGenerating] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const [checking, setChecking] = useState(false)
+    const [check, setCheck] = useState<{ ok: boolean; reason: string; sample?: { views?: number; reach?: number }; reelsFound?: number } | null>(null)
     const [plan, setPlan] = useState<ContentPlan | null>(null)
     const [history, setHistory] = useState<ContentPlan[]>([])
     const [showHistory, setShowHistory] = useState(false)
@@ -272,6 +283,20 @@ export function ContentStudio({ userId }: { userId: string }) {
             setError("Generation failed — check your connection and try again")
         } finally {
             setGenerating(false)
+        }
+    }
+
+    const runCheck = async () => {
+        setChecking(true)
+        setCheck(null)
+        try {
+            const res = await fetch(`/api/ai/content/check?userId=${userId}`)
+            const data = await res.json()
+            setCheck({ ok: Boolean(data.ok), reason: data.reason || data.error || "Check failed", sample: data.sample, reelsFound: data.reelsFound })
+        } catch {
+            setCheck({ ok: false, reason: "Check failed — could not reach the server" })
+        } finally {
+            setChecking(false)
         }
     }
 
@@ -384,6 +409,15 @@ export function ContentStudio({ userId }: { userId: string }) {
                         )}
                     </div>
                     <div className="flex items-center gap-2">
+                        <button
+                            onClick={runCheck}
+                            disabled={checking}
+                            title="Check that Instagram posts and insights are readable — costs no AI tokens"
+                            className="flex items-center gap-2 h-9 px-4 rounded-full border border-white/10 text-neutral-400 hover:text-white hover:border-white/30 font-mono-ui text-[11px] font-bold uppercase tracking-widest transition-colors disabled:opacity-50"
+                        >
+                            {checking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
+                            Check access
+                        </button>
                         {history.length > 0 && (
                             <button
                                 onClick={() => setShowHistory(!showHistory)}
@@ -408,6 +442,31 @@ export function ContentStudio({ userId }: { userId: string }) {
                     <p className="text-[11px] text-neutral-600">
                         Reading your posts and thinking it through — this usually takes 30–90 seconds.
                     </p>
+                )}
+
+                {check && (
+                    <div
+                        className={`rounded-xl border px-4 py-3 text-xs flex items-start gap-2 ${
+                            check.ok
+                                ? "border-[#ffe14d]/30 bg-[#ffe14d]/[0.06] text-neutral-300"
+                                : "border-white/10 bg-white/[0.02] text-neutral-400"
+                        }`}
+                    >
+                        {check.ok
+                            ? <Check className="w-3.5 h-3.5 text-[#ffe14d] mt-0.5 shrink-0" />
+                            : <AlertTriangle className="w-3.5 h-3.5 text-neutral-600 mt-0.5 shrink-0" />}
+                        <span>
+                            {check.reason}
+                            {check.ok && check.sample && (
+                                <span className="block text-neutral-500 mt-1">
+                                    Sample from your account: {check.sample.views !== undefined && `${compact(check.sample.views)} views`}
+                                    {check.sample.views !== undefined && check.sample.reach !== undefined && " · "}
+                                    {check.sample.reach !== undefined && `${compact(check.sample.reach)} reach`}
+                                    {check.reelsFound !== undefined && ` · ${check.reelsFound} reel(s) in the last 3 posts`}
+                                </span>
+                            )}
+                        </span>
+                    </div>
                 )}
             </div>
 

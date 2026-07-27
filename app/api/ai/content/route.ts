@@ -1,75 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSupabaseServerClient } from "@/lib/supabase-server"
 import { loadAiSettings } from "@/lib/ai/agent"
-import { generateContentPlan, isReel, type OwnPost } from "@/lib/ai/content"
+import { generateContentPlan } from "@/lib/ai/content"
+import { attachInsights, fetchOwnPosts } from "@/lib/instagram-media"
 
 export const maxDuration = 300 // planning with high effort is slow
 
-const GRAPH = "https://graph.instagram.com"
-
-/**
- * Pull the creator's own recent posts. Engagement counts are only returned for
- * professional accounts, so fall back to the basic field set if they're refused.
- */
-async function fetchOwnPosts(token: string): Promise<OwnPost[]> {
-  const common = "id,caption,media_type,media_product_type,permalink,thumbnail_url,media_url,timestamp"
-  const withEngagement = `${common},like_count,comments_count`
-
-  for (const fields of [withEngagement, common]) {
-    try {
-      const res = await fetch(`${GRAPH}/me/media?fields=${fields}&limit=25&access_token=${encodeURIComponent(token)}`, {
-        cache: "no-store",
-      })
-      const json = await res.json()
-      if (json.error) {
-        console.warn("[content] media fetch failed:", JSON.stringify(json.error))
-        continue
-      }
-      return Array.isArray(json.data) ? json.data : []
-    } catch (e) {
-      console.warn("[content] media fetch threw:", e)
-    }
-  }
-  return []
-}
-
-/**
- * Views/reach/saves for one post. Needs `instagram_business_manage_insights`;
- * accounts that connected before that scope was added simply get nothing back,
- * and the plan falls back to caption-only analysis.
- */
-async function fetchMediaInsights(token: string, post: OwnPost): Promise<void> {
-  if (!post.id) return
-
-  // `views` only applies to video/reels — asking for it on a still image fails
-  // the whole request, so the metric set depends on the media type.
-  const metrics = isReel(post) ? "views,reach,saved,shares" : "reach,saved,shares"
-
-  try {
-    const res = await fetch(
-      `${GRAPH}/${post.id}/insights?metric=${metrics}&access_token=${encodeURIComponent(token)}`,
-      { cache: "no-store" },
-    )
-    const json = await res.json()
-    if (json.error) return
-    for (const entry of json.data ?? []) {
-      const value = entry?.values?.[0]?.value
-      if (typeof value !== "number") continue
-      if (entry.name === "views") post.views = value
-      else if (entry.name === "reach") post.reach = value
-      else if (entry.name === "saved") post.saved = value
-      else if (entry.name === "shares") post.shares = value
-    }
-  } catch {
-    // Insights are a bonus, never a hard requirement.
-  }
-}
-
-/** Enrich in parallel — 25 sequential round trips would blow the request budget. */
-async function attachInsights(token: string, posts: OwnPost[]): Promise<boolean> {
-  await Promise.allSettled(posts.map((post) => fetchMediaInsights(token, post)))
-  return posts.some((p) => p.views !== undefined || p.reach !== undefined)
-}
 
 export async function GET(request: NextRequest) {
   try {
@@ -121,9 +57,14 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 })
 
     const posts = user.access_token ? await fetchOwnPosts(user.access_token) : []
-    const hasInsights = user.access_token && posts.length ? await attachInsights(user.access_token, posts) : false
-    if (posts.length && !hasInsights) {
-      console.log("[content] no insights returned — account likely predates the manage_insights scope")
+    if (user.access_token && posts.length) {
+      const { granted, firstError } = await attachInsights(user.access_token, posts)
+      if (!granted) {
+        console.log(
+          "[content] no insights returned — the token likely predates instagram_business_manage_insights:",
+          JSON.stringify(firstError ?? "no error reported"),
+        )
+      }
     }
 
     const result = await generateContentPlan(

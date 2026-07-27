@@ -1,4 +1,5 @@
 import type { AiSettings } from "@/lib/types"
+import type { OwnPost } from "@/lib/instagram-media"
 import { generateReply } from "./providers"
 
 // ============================================================
@@ -6,27 +7,10 @@ import { generateReply } from "./providers"
 // concrete content ideas with scripts.
 // ============================================================
 
-export interface OwnPost {
-  id?: string
-  caption?: string
-  media_type?: string
-  media_product_type?: string
-  timestamp?: string
-  like_count?: number
-  comments_count?: number
-  permalink?: string
-  thumbnail_url?: string
-  media_url?: string
-  /** Insights — only present when the account granted manage_insights. */
-  views?: number
-  reach?: number
-  saved?: number
-  shares?: number
-}
-
-export function isReel(post: OwnPost): boolean {
-  return post.media_product_type === "REELS" || post.media_type === "VIDEO"
-}
+// Media shapes live with the Instagram fetching code; re-exported so existing
+// imports of OwnPost from this module keep working.
+export type { OwnPost } from "@/lib/instagram-media"
+export { isReel } from "@/lib/instagram-media"
 
 export interface ContentRequest {
   goal: string
