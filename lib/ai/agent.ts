@@ -216,7 +216,9 @@ export async function runAiAgent(params: {
   const { supabase, user, conversationId, senderId, incomingText } = params
 
   const settings = await loadAiSettings(supabase, user.id)
-  if (!settings || !settings.is_enabled) return { status: "skipped", reason: "AI agent is off" }
+  // Kept distinct: "never set up" and "set up but switched off" need different fixes.
+  if (!settings) return { status: "skipped", reason: "no AI settings saved for this account" }
+  if (!settings.is_enabled) return { status: "skipped", reason: "AI agent is off (master switch)" }
   if (!settings.api_key) return { status: "skipped", reason: "no API key configured" }
   if (!conversationId) return { status: "skipped", reason: "no conversation record" }
 

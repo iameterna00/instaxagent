@@ -20,12 +20,20 @@ function describeFailure(error: any, verb: "load" | "save"): string {
   const message: string = error?.message || String(error)
 
   if (message.includes("Supabase is not configured")) return message
-  // 42P01 undefined_table, 42703 undefined_column
-  if (error?.code === "42P01" || /relation .*ai_settings.* does not exist/i.test(message)) {
-    return "The ai_settings table is missing — run scripts/09-ai-agent.sql in Supabase."
+
+  // Missing table: 42P01 straight from Postgres, PGRST205 when PostgREST cannot
+  // find it in its schema cache (what you get before the migration is run).
+  if (
+    error?.code === "42P01" ||
+    error?.code === "PGRST205" ||
+    /ai_settings/.test(message) ||
+    /does not exist|schema cache/i.test(message)
+  ) {
+    return "The ai_settings table is missing — run scripts/09-ai-agent.sql in your Supabase SQL editor."
   }
-  if (error?.code === "42703") {
-    return `Database is out of date (${message}) — run scripts/09-ai-agent.sql in Supabase.`
+  // 42703 undefined_column / PGRST204 unknown column in cache
+  if (error?.code === "42703" || error?.code === "PGRST204") {
+    return `Database is out of date (${message}) — run scripts/09-ai-agent.sql in your Supabase SQL editor.`
   }
   return `Could not ${verb} AI settings: ${message}`
 }

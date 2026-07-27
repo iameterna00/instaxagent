@@ -473,6 +473,20 @@ Never promise specific results or timelines.`}
                 <div className="text-xs">
                     {error ? (
                         <span className="text-red-400">{error}</span>
+                    ) : !draft.is_enabled && canEnable ? (
+                        // Saving settings does not switch the agent on — say so, and offer the switch.
+                        <span className="flex items-center gap-2 flex-wrap">
+                            <span className="text-neutral-500">
+                                {saved ? "Saved, but the agent is still off." : "The agent is off — it won't reply yet."}
+                            </span>
+                            <button
+                                onClick={() => save({ is_enabled: true })}
+                                disabled={saving}
+                                className="text-[#ffe14d] underline underline-offset-2 hover:brightness-110 disabled:opacity-50"
+                            >
+                                Turn it on
+                            </button>
+                        </span>
                     ) : saved ? (
                         <span className="text-[#ffe14d]">Saved</span>
                     ) : (
