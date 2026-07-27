@@ -59,6 +59,41 @@ export interface MediaSelection {
   caption?: string
 }
 
+// ============================================================
+// AI Agent
+// ============================================================
+export type AiProvider = "anthropic" | "openai" | "deepseek"
+
+/** Who the agent is allowed to reply to. */
+export type AudienceMode = "all" | "followers" | "following" | "mutuals"
+
+export interface AiSettings {
+  user_id: number
+  is_enabled: boolean
+  provider: AiProvider
+  model: string
+  /** Never sent to the browser — the API returns `has_api_key` instead. */
+  api_key?: string | null
+  has_api_key?: boolean
+  system_prompt: string
+  audience_mode: AudienceMode
+  blocklist: string[]
+  pause_on_human_reply: boolean
+  /** 0 = stop the AI until it is manually resumed. */
+  human_takeover_minutes: number
+  history_limit: number
+  max_reply_chars: number
+  reply_delay_seconds: number
+  typing_indicator: boolean
+}
+
+/** Per-conversation AI state, stored on the `conversations` row. */
+export interface ConversationAiState {
+  ai_enabled: boolean
+  ai_paused_until: string | null
+  ai_last_reason: string | null
+}
+
 export interface Automation {
   id: string
   name: string

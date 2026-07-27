@@ -137,6 +137,36 @@ export async function fetchProfile(token: string, igUserId: string): Promise<{ u
   }
 }
 
+export interface MessagingProfile {
+  username?: string
+  name?: string
+  /** true when this person follows the business account */
+  is_user_follow_business?: boolean
+  /** true when the business account follows this person */
+  is_business_follow_user?: boolean
+}
+
+/**
+ * Profile lookup for someone who has messaged us, including the follow-relationship
+ * flags used by the AI agent's audience rules. Those fields need
+ * `instagram_business_manage_messages` and are not returned for every account, so
+ * we fall back to the plain profile rather than failing the whole lookup.
+ */
+export async function fetchMessagingProfile(token: string, igUserId: string): Promise<MessagingProfile | null> {
+  const withFollowFlags = "username,name,is_user_follow_business,is_business_follow_user"
+  try {
+    const res = await fetch(
+      `${GRAPH}/${igUserId}?fields=${withFollowFlags}&access_token=${encodeURIComponent(token)}`,
+    )
+    const json = await res.json()
+    if (!json.error) return json
+    console.warn(`[ig-api] follow flags unavailable for ${igUserId}:`, JSON.stringify(json.error))
+  } catch (e) {
+    console.warn(`[ig-api] follow flag lookup failed for ${igUserId}:`, e)
+  }
+  return fetchProfile(token, igUserId)
+}
+
 export async function verifyIdOwnership(token: string, id: string): Promise<boolean> {
   try {
     const res = await fetch(`${GRAPH}/${id}?fields=id&access_token=${encodeURIComponent(token)}`)

@@ -1,10 +1,33 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
-import { Send, Loader2, MoreVertical, Phone, Video, Zap, ChevronLeft } from "lucide-react"
+import { useCallback, useEffect, useState, useRef } from "react"
+import { Send, Loader2, MoreVertical, Phone, Video, Zap, ChevronLeft, Brain } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { Message } from "@/types/db"
+import type { ConversationAiState } from "@/lib/types"
+
+const PAUSE_CHOICES = [
+    { minutes: 30, label: "Pause 30 minutes" },
+    { minutes: 60, label: "Pause 1 hour" },
+    { minutes: 180, label: "Pause 3 hours" },
+    { minutes: 1440, label: "Pause 1 day" },
+]
+
+/** Turns the raw AI columns into something worth putting on a chip. */
+function describeAi(state: ConversationAiState | null, agentEnabled: boolean) {
+    if (!agentEnabled) return { label: "AI off", active: false, note: "Turn the AI agent on in Automations" }
+    if (!state) return { label: "AI", active: false, note: "" }
+    if (!state.ai_enabled) return { label: "AI stopped", active: false, note: "Stopped for this chat" }
+
+    const until = state.ai_paused_until ? new Date(state.ai_paused_until) : null
+    if (until && until.getTime() > Date.now()) {
+        const mins = Math.max(1, Math.round((until.getTime() - Date.now()) / 60000))
+        const pretty = mins >= 60 ? `${Math.round(mins / 60)}h` : `${mins}m`
+        return { label: `AI paused ${pretty}`, active: false, note: state.ai_last_reason ?? "" }
+    }
+    return { label: "AI on", active: true, note: state.ai_last_reason ?? "" }
+}
 
 interface ChatWindowProps {
     conversationId: string | null
@@ -21,6 +44,10 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
     const [sending, setSending] = useState(false)
     const [isAutomationOpen, setIsAutomationOpen] = useState(false)
     const [automations, setAutomations] = useState<any[]>([])
+    const [aiState, setAiState] = useState<ConversationAiState | null>(null)
+    const [agentEnabled, setAgentEnabled] = useState(false)
+    const [aiMenuOpen, setAiMenuOpen] = useState(false)
+    const [aiBusy, setAiBusy] = useState(false)
     const bottomRef = useRef<HTMLDivElement>(null)
 
     useEffect(() => {
@@ -52,6 +79,50 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
             })
         }
     }, [userId])
+
+    // Account-level master switch — a per-chat "AI on" chip would be a lie without it.
+    useEffect(() => {
+        if (!userId) return
+        fetch(`/api/ai/settings?userId=${userId}`)
+            .then(res => res.json())
+            .then(data => setAgentEnabled(Boolean(data?.is_enabled)))
+            .catch(() => { })
+    }, [userId])
+
+    const loadAiState = useCallback(async () => {
+        if (!conversationId) return
+        try {
+            const res = await fetch(`/api/ai/conversation?conversationId=${conversationId}`)
+            const data = await res.json()
+            if (!data?.error) setAiState(data)
+        } catch (error) {
+            console.error("Failed to load AI state", error)
+        }
+    }, [conversationId])
+
+    useEffect(() => {
+        setAiMenuOpen(false)
+        loadAiState()
+    }, [loadAiState])
+
+    const updateAi = async (action: "pause" | "stop" | "resume", minutes?: number) => {
+        if (!conversationId) return
+        setAiBusy(true)
+        try {
+            const res = await fetch("/api/ai/conversation", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ conversationId, action, minutes }),
+            })
+            const data = await res.json()
+            if (!data?.error) setAiState(data)
+        } catch (error) {
+            console.error("Failed to update AI state", error)
+        } finally {
+            setAiBusy(false)
+            setAiMenuOpen(false)
+        }
+    }
 
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -86,6 +157,8 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
                     created_at: new Date().toISOString()
                 }
                 setMessages(prev => [...prev, newMsg])
+                // The server hands the chat back from the AI when you reply yourself.
+                loadAiState()
             }
         } catch (e) {
             console.error("Send failed", e)
@@ -111,6 +184,8 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
         )
     }
 
+    const aiStatus = describeAi(aiState, agentEnabled)
+
     return (
         <div className="flex-1 flex flex-col h-full bg-black/40 relative">
             {/* Header */}
@@ -131,6 +206,64 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
                     </div>
                 </div>
                 <div className="flex items-center gap-1">
+                    {/* AI agent control for this conversation */}
+                    <div className="relative">
+                        <button
+                            onClick={() => setAiMenuOpen(!aiMenuOpen)}
+                            disabled={aiBusy}
+                            title={aiStatus.note || undefined}
+                            className={cn(
+                                "flex items-center gap-1.5 h-8 px-3 rounded-full border text-[11px] font-semibold transition-colors disabled:opacity-50",
+                                aiStatus.active
+                                    ? "bg-[#ffe14d]/10 border-[#ffe14d]/40 text-[#ffe14d]"
+                                    : "border-white/10 text-muted-foreground hover:text-white hover:border-white/30"
+                            )}
+                        >
+                            {aiBusy
+                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                : <Brain className="w-3.5 h-3.5" />}
+                            <span className="hidden sm:inline">{aiStatus.label}</span>
+                        </button>
+
+                        {aiMenuOpen && (
+                            <>
+                                <div className="fixed inset-0 z-40" onClick={() => setAiMenuOpen(false)} />
+                                <div className="absolute right-0 top-10 w-56 bg-black/90 border border-white/10 rounded-xl shadow-2xl backdrop-blur-xl p-1.5 z-50">
+                                    {!agentEnabled && (
+                                        <div className="px-2.5 py-2 text-[11px] text-muted-foreground">
+                                            The AI agent is off for your whole account. Turn it on in Automations.
+                                        </div>
+                                    )}
+                                    {agentEnabled && (
+                                        <>
+                                            {PAUSE_CHOICES.map(choice => (
+                                                <button
+                                                    key={choice.minutes}
+                                                    onClick={() => updateAi("pause", choice.minutes)}
+                                                    className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-white/10 text-sm text-white transition-colors"
+                                                >
+                                                    {choice.label}
+                                                </button>
+                                            ))}
+                                            <div className="h-px bg-white/10 my-1" />
+                                            <button
+                                                onClick={() => updateAi("stop")}
+                                                className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-white/10 text-sm text-red-400 transition-colors"
+                                            >
+                                                Stop AI in this chat
+                                            </button>
+                                            <button
+                                                onClick={() => updateAi("resume")}
+                                                className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-white/10 text-sm text-[#ffe14d] transition-colors"
+                                            >
+                                                Resume now
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            </>
+                        )}
+                    </div>
                     <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-white hidden md:flex"><Phone className="w-4 h-4" /></Button>
                     <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-white hidden md:flex"><Video className="w-4 h-4" /></Button>
                     <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-white"><MoreVertical className="w-4 h-4" /></Button>

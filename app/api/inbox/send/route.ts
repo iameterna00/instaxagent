@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getSupabaseServerClient } from "@/lib/supabase-server"
+import { applyHumanTakeover, loadAiSettings } from "@/lib/ai/agent"
 
 export async function POST(request: NextRequest) {
     try {
@@ -77,6 +78,15 @@ export async function POST(request: NextRequest) {
                 .from("conversations")
                 .update({ last_message_at: new Date().toISOString() })
                 .eq("id", conv.id)
+
+            // You just replied by hand — hold the AI agent back so it doesn't
+            // talk over you (duration comes from the AI settings).
+            try {
+                const aiSettings = await loadAiSettings(supabase, userId)
+                await applyHumanTakeover(supabase, conv.id, aiSettings)
+            } catch (e) {
+                console.error("[Inbox Send] Failed to apply AI takeover pause", e)
+            }
         }
 
         return NextResponse.json({ success: true, data })

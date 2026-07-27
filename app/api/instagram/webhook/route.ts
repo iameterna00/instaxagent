@@ -13,6 +13,7 @@ import {
   verifyIdOwnership,
   sleep,
 } from "@/lib/instagram-api"
+import { applyHumanTakeover, loadAiSettings, runAiAgent } from "@/lib/ai/agent"
 
 const WEBHOOK_VERIFY_TOKEN = process.env.INSTAGRAM_WEBHOOK_VERIFY_TOKEN
 // Meta signs every webhook POST with HMAC-SHA256 of the raw body. Depending on app setup the
@@ -120,6 +121,33 @@ async function sendAutomationResponse(
   return result
 }
 
+// An echo can be our own automation/AI reply coming back, or a message the owner
+// typed in the Instagram app. We tell them apart by looking for a matching
+// outgoing message we logged a moment ago.
+const OWN_ECHO_WINDOW_MS = 5 * 60_000
+
+async function findOwnOutgoingMessage(supabase: any, conversationId: string, text: string): Promise<boolean> {
+  const since = new Date(Date.now() - OWN_ECHO_WINDOW_MS).toISOString()
+  const { data } = await supabase
+    .from("messages")
+    .select("id")
+    .eq("conversation_id", conversationId)
+    .eq("is_from_instagram", false)
+    .eq("content", text)
+    .gte("created_at", since)
+    .limit(1)
+  return Array.isArray(data) && data.length > 0
+}
+
+async function isOwnOutgoingMessage(supabase: any, conversationId: string, text: string): Promise<boolean> {
+  if (await findOwnOutgoingMessage(supabase, conversationId, text)) return true
+  // We log an outgoing message just after the send that produced this echo, so the
+  // echo can occasionally beat the insert. Look once more before concluding a
+  // human sent it — a false positive here would pause the agent against its own reply.
+  await sleep(1500)
+  return findOwnOutgoingMessage(supabase, conversationId, text)
+}
+
 function responsePreviewText(content: any): string {
   if (content.message) return content.message
   if (content.card) return `[Card] ${content.card.title}`
@@ -152,13 +180,10 @@ export async function POST(request: NextRequest) {
     const supabase = await getSupabaseServerClient()
 
     for (const entry of body.entry) {
-      // Skip pure system events (echo / read / delivery)
-      if (entry.messaging) {
-        const isSystemEvent = entry.messaging.every(
-          (event: any) => event.read || event.delivery || (event.message && event.message.is_echo),
-        )
-        if (isSystemEvent) continue
-      }
+      // Read/delivery receipts carry nothing to act on. Echoes DO — they are how we
+      // notice the owner replying from the Instagram app — so they fall through to
+      // PART A.0 below. Every other section still filters them out.
+      if (entry.messaging?.every((event: any) => event.read || event.delivery)) continue
 
       const webhookId = entry.id
 
@@ -178,6 +203,8 @@ export async function POST(request: NextRequest) {
         }
         if (entry.messaging) {
           for (const event of entry.messaging) {
+            // On an echo the recipient is the customer, not us — it would poison the lookup.
+            if (event.message?.is_echo) continue
             if (event.recipient?.id) candidateIds.add(String(event.recipient.id))
           }
         }
@@ -215,13 +242,45 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      const { data: automations } = await supabase
+      // ============================================================
+      //  PART A.0: HUMAN TAKEOVER
+      //  If a message went out from this account that we did not send, the owner
+      //  is replying by hand — hand the conversation back to them.
+      // ============================================================
+      if (entry.messaging) {
+        const echoes = entry.messaging.filter((event: any) => event.message?.is_echo && event.message?.text)
+        if (echoes.length) {
+          const aiSettings = await loadAiSettings(supabase, user.id)
+          if (aiSettings?.pause_on_human_reply) {
+            for (const event of echoes) {
+              const recipientId = event.recipient?.id
+              if (!recipientId) continue
+
+              const { data: echoConv } = await supabase
+                .from("conversations")
+                .select("id")
+                .eq("user_id", user.id)
+                .eq("recipient_id", recipientId)
+                .single()
+
+              if (!echoConv) continue
+              if (await isOwnOutgoingMessage(supabase, echoConv.id, event.message.text)) continue
+
+              console.log(`[webhook] ✋ Manual reply detected in chat with ${recipientId} — handing back from AI`)
+              await applyHumanTakeover(supabase, echoConv.id, aiSettings)
+            }
+          }
+        }
+      }
+
+      const { data: automationRows } = await supabase
         .from("automations")
         .select("*")
         .eq("user_id", user.id)
         .eq("is_active", true)
 
-      if (!automations?.length) continue
+      // No early exit here: with zero rules the AI agent is still allowed to answer DMs.
+      const automations = automationRows ?? []
 
       // ============================================================
       //  PART A: COMMENTS
@@ -362,13 +421,17 @@ export async function POST(request: NextRequest) {
 
           let triggerType = ""
           let triggerValue = ""
+          // triggerValue is lower-cased for keyword matching; rawText keeps the
+          // message as written, which is what we store and show the AI.
+          let rawText = ""
 
           if (event.message?.quick_reply?.payload) {
             triggerType = "postback"
             triggerValue = event.message.quick_reply.payload
           } else if (event.message?.text) {
             triggerType = "keyword"
-            triggerValue = event.message.text.toLowerCase().trim()
+            rawText = String(event.message.text).trim()
+            triggerValue = rawText.toLowerCase()
           } else if (event.postback?.payload) {
             triggerType = "postback"
             triggerValue = event.postback.payload
@@ -419,7 +482,7 @@ export async function POST(request: NextRequest) {
                 user_id: user.id,
                 sender_id: senderId,
                 sender_username: "User",
-                content: triggerValue,
+                content: rawText || triggerValue,
                 is_from_instagram: true,
               })
             }
@@ -461,7 +524,73 @@ export async function POST(request: NextRequest) {
             )
           }
 
-          if (!match) continue
+          // ============================================================
+          //  No rule matched — hand the message to the AI agent.
+          // ============================================================
+          if (!match) {
+            // Postback payloads are UI plumbing, not something worth answering.
+            if (triggerType !== "keyword") continue
+
+            await sendSenderAction(user.access_token, senderId, "mark_seen")
+
+            const outcome = await runAiAgent({
+              supabase,
+              user,
+              conversationId: conv?.id ?? null,
+              senderId,
+              incomingText: rawText || triggerValue,
+            })
+
+            if (outcome.status !== "reply") {
+              if (outcome.status === "error") console.error(`[webhook] 🤖 AI error: ${outcome.reason}`)
+              else console.log(`[webhook] 🤖 AI skipped: ${outcome.reason}`)
+              if (conv) {
+                await supabase.from("conversations").update({ ai_last_reason: outcome.reason }).eq("id", conv.id)
+              }
+              continue
+            }
+
+            console.log(`[webhook] 🤖 AI replying to ${senderId}`)
+            const aiResult = await sendAutomationResponse(
+              user.access_token,
+              { id: senderId },
+              {
+                message: outcome.text,
+                delay_seconds: outcome.settings.reply_delay_seconds,
+                typing_indicator: outcome.settings.typing_indicator,
+              },
+            )
+
+            if (!aiResult?.ok) {
+              console.error("[webhook] 🤖 AI reply failed to send:", JSON.stringify(aiResult?.error))
+              if (conv) {
+                await supabase
+                  .from("conversations")
+                  .update({ ai_last_reason: "reply failed to send" })
+                  .eq("id", conv.id)
+              }
+              continue
+            }
+
+            if (conv) {
+              try {
+                await supabase.from("messages").insert({
+                  id: `mid_ai_${Date.now()}_${Math.random()}`,
+                  conversation_id: conv.id,
+                  user_id: user.id,
+                  sender_id: user.business_account_id,
+                  sender_username: user.username,
+                  content: outcome.text,
+                  is_from_instagram: false,
+                  via_ai: true,
+                })
+              } catch (e) {
+                console.error("[webhook] Failed to save AI reply", e)
+              }
+              await supabase.from("conversations").update({ ai_last_reason: "replied" }).eq("id", conv.id)
+            }
+            continue
+          }
 
           console.log(`[webhook] ✅ DM match: "${match.name}"`)
           const content = parseContent(match.response_content)

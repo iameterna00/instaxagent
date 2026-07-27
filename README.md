@@ -40,11 +40,13 @@ app/api/instagram/webhook        DM/comment/story webhook handler
 app/api/automations              Automation CRUD
 app/api/ice-breakers             Ice Breaker management + sync
 app/api/inbox                    Conversations, messages, manual send
-app/api/groq                     AI auto-reply settings + chat proxy
+app/api/ai                       AI agent settings, dry-run test, per-chat control
 components/dashboard             Dashboard and automations UI
 components/inbox                 Live inbox UI
+lib/ai                           AI agent: provider catalog, clients, reply logic
 lib/supabase-server.ts           Supabase server client
 schema.sql                       Database schema
+scripts/09-ai-agent.sql          AI agent tables/columns (run after schema.sql)
 ```
 
 ## Quick start

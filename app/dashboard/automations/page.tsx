@@ -4,7 +4,8 @@ import { useState, useCallback, useEffect } from "react"
 import { useInstagramSession } from "@/hooks/use-instagram-session"
 import { AutomationList } from "@/components/dashboard/AutomationList"
 import { CreateRuleForm } from "@/components/dashboard/CreateRuleForm"
-import { MessageCircle, Send, Sparkles, Zap, Plus, Brain, Loader2 } from "lucide-react"
+import { AiAgentPanel } from "@/components/dashboard/AiAgentPanel"
+import { MessageCircle, Send, Sparkles, Plus, Brain } from "lucide-react"
 import type { Automation } from "@/lib/types"
 
 export default function AutomationsPage() {
@@ -14,55 +15,8 @@ export default function AutomationsPage() {
     const [activeTab, setActiveTab] = useState<'comment' | 'dm' | 'story'>('comment')
     const [showCreateForm, setShowCreateForm] = useState(false)
     const [editRule, setEditRule] = useState<Automation | null>(null)
+    const [showAiPanel, setShowAiPanel] = useState(false)
     const [aiEnabled, setAiEnabled] = useState(false)
-    const [aiLoading, setAiLoading] = useState(true)
-    const [aiToggling, setAiToggling] = useState(false)
-    const [showAiContext, setShowAiContext] = useState(false)
-    const [aiContext, setAiContext] = useState("")
-    const [aiContextSaving, setAiContextSaving] = useState(false)
-    const [aiContextSaved, setAiContextSaved] = useState(false)
-
-    useEffect(() => {
-        if (!userId) return
-        fetch(`/api/groq/auto-reply?userId=${userId}`)
-            .then(res => res.json())
-            .then(data => {
-                setAiEnabled(data.enabled ?? false)
-                setAiContext(data.ai_context ?? "")
-            })
-            .catch(() => {})
-            .finally(() => setAiLoading(false))
-    }, [userId])
-
-    const handleSaveAiContext = async () => {
-        if (aiContextSaving) return
-        setAiContextSaving(true)
-        try {
-            await fetch("/api/groq/auto-reply", {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ userId, enabled: aiEnabled, ai_context: aiContext }),
-            })
-            setAiContextSaved(true)
-            setTimeout(() => setAiContextSaved(false), 2000)
-        } catch {}
-        setAiContextSaving(false)
-    }
-
-    const handleToggleAI = async () => {
-        if (aiToggling) return
-        setAiToggling(true)
-        const newState = !aiEnabled
-        try {
-            const res = await fetch("/api/groq/auto-reply", {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ userId, enabled: newState }),
-            })
-            if (res.ok) setAiEnabled(newState)
-        } catch {}
-        setAiToggling(false)
-    }
 
     const fetchAutomations = useCallback(async () => {
         if (!userId) return
@@ -80,6 +34,15 @@ export default function AutomationsPage() {
     useEffect(() => {
         if (userId) fetchAutomations()
     }, [userId, fetchAutomations])
+
+    // Just enough to label the button before the panel is opened.
+    useEffect(() => {
+        if (!userId) return
+        fetch(`/api/ai/settings?userId=${userId}`)
+            .then(res => res.json())
+            .then(data => setAiEnabled(Boolean(data?.is_enabled)))
+            .catch(() => { })
+    }, [userId])
 
     const handleDeleteRule = async (id: string) => {
         await fetch(`/api/automations?id=${id}`, { method: "DELETE" })
@@ -117,32 +80,19 @@ export default function AutomationsPage() {
                         <h1 className="font-serif-display text-4xl md:text-5xl text-white leading-none">Automations</h1>
                     </div>
                     <div className="flex items-center gap-2">
-                        {/* AI Auto-Reply Toggle */}
-                        {aiLoading ? (
-                            <Loader2 className="w-4 h-4 text-neutral-500 animate-spin" />
-                        ) : (
-                            <>
-                                <button
-                                    onClick={() => setShowAiContext(!showAiContext)}
-                                    className="w-9 h-9 flex items-center justify-center rounded-full border border-white/10 text-neutral-500 hover:text-white hover:border-white/30 transition-colors"
-                                    title="AI settings"
-                                >
-                                    <Brain className="w-4 h-4" />
-                                </button>
-                                <button
-                                    onClick={handleToggleAI}
-                                    disabled={aiToggling}
-                                    className={`flex items-center gap-2 h-9 px-4 rounded-full font-mono-ui text-[11px] font-bold uppercase tracking-widest transition-colors ${
-                                        aiEnabled
-                                            ? 'bg-[#ffe14d]/10 border border-[#ffe14d]/40 text-[#ffe14d]'
-                                            : 'border border-white/10 text-neutral-500 hover:text-white hover:border-white/30'
-                                    }`}
-                                >
-                                    <Sparkles className={`w-3.5 h-3.5 ${aiToggling ? 'animate-pulse' : ''}`} />
-                                    {aiToggling ? '...' : aiEnabled ? 'AI ON' : 'AI OFF'}
-                                </button>
-                            </>
-                        )}
+                        <button
+                            onClick={() => setShowAiPanel(!showAiPanel)}
+                            className={`flex items-center gap-2 h-9 px-4 rounded-full font-mono-ui text-[11px] font-bold uppercase tracking-widest transition-colors border ${
+                                showAiPanel
+                                    ? 'border-white/20 text-white'
+                                    : aiEnabled
+                                        ? 'bg-[#ffe14d]/10 border-[#ffe14d]/40 text-[#ffe14d]'
+                                        : 'border-white/10 text-neutral-500 hover:text-white hover:border-white/30'
+                            }`}
+                        >
+                            <Brain className="w-3.5 h-3.5" />
+                            {showAiPanel ? 'Close AI' : aiEnabled ? 'AI Agent · On' : 'AI Agent'}
+                        </button>
                         <button
                             onClick={() => {
                                 if (showCreateForm) setEditRule(null)
@@ -160,28 +110,10 @@ export default function AutomationsPage() {
                     </div>
                 </div>
 
-                {/* AI Context Panel */}
-                {showAiContext && (
-                    <div className="rounded-2xl border border-[#ffe14d]/20 bg-[#ffe14d]/[0.04] p-5 animate-in fade-in slide-in-from-top-2 duration-200 space-y-3">
-                        <div className="flex items-center gap-2">
-                            <Brain className="w-4 h-4 text-[#ffe14d]" />
-                            <span className="text-sm font-semibold text-[#ffe14d]">AI Personality Context</span>
-                        </div>
-                        <p className="text-xs text-neutral-500">Tell AI about your account — niche, products, tone, what to say/avoid. More context = more human replies.</p>
-                        <textarea
-                            value={aiContext}
-                            onChange={e => setAiContext(e.target.value)}
-                            placeholder={`e.g. This is a fitness coaching account. I sell online training programs (₹2999/mo). My tone is motivating but chill. If someone asks about pricing, tell them to DM for a free consultation. Never promise specific results.`}
-                            rows={4}
-                            className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-neutral-600 resize-none focus:outline-none focus:border-[#ffe14d]/50 transition-colors"
-                        />
-                        <button
-                            onClick={handleSaveAiContext}
-                            disabled={aiContextSaving}
-                            className="px-4 py-2 rounded-xl bg-[#ffe14d] hover:brightness-95 text-black text-xs font-bold transition-all disabled:opacity-50"
-                        >
-                            {aiContextSaving ? 'Saving...' : aiContextSaved ? 'Saved ✓' : 'Save Context'}
-                        </button>
+                {/* AI Agent Panel */}
+                {showAiPanel && (
+                    <div className="animate-in fade-in slide-in-from-top-2 duration-200">
+                        <AiAgentPanel userId={userId} onEnabledChange={setAiEnabled} />
                     </div>
                 )}
 
