@@ -1,87 +1,98 @@
-@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;700&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+  Monochrome, system-aware theme.
+  Light is the default; `.dark` on <html> (set by next-themes) flips the stack.
+  Every surface/border/text colour in the app should come from these tokens —
+  no hardcoded hex in components.
+*/
 :root {
-  /* Minimal B/W Theme */
-  --background: oklch(0.05 0 0); /* Pure black */
-  --foreground: oklch(0.98 0 0); /* White */
-  --accent-yellow: #ffe14d;
-  
-  --card: oklch(0.08 0 0);
-  --card-foreground: oklch(0.98 0 0);
-  
-  --popover: oklch(0.08 0 0);
-  --popover-foreground: oklch(0.98 0 0);
+  --background: #ffffff;
+  --foreground: #18181b;
 
-  /* Primary is now White for high contrast */
-  --primary: oklch(0.98 0 0);
-  --primary-foreground: oklch(0.05 0 0);
+  --card: #fafafa;
+  --card-foreground: #18181b;
 
-  /* Secondary is Dark Gray */
-  --secondary: oklch(0.2 0 0);
-  --secondary-foreground: oklch(0.98 0 0);
+  --popover: #ffffff;
+  --popover-foreground: #18181b;
 
-  --muted: oklch(0.15 0 0);
-  --muted-foreground: oklch(0.6 0 0);
-  
-  --accent: oklch(0.15 0 0);
-  --accent-foreground: oklch(0.98 0 0);
+  /* Monochrome primary: near-black on light, near-white on dark. */
+  --primary: #18181b;
+  --primary-foreground: #fafafa;
 
-  --destructive: oklch(0.5 0.2 27); /* Keeping red for errors but slightly desaturated */
-  --destructive-foreground: oklch(0.98 0 0);
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
 
-  --border: oklch(0.15 0 0);
-  --input: oklch(0.15 0 0);
-  --ring: oklch(0.25 0 0);
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
 
-  --radius: 0.5rem;
+  --accent: #f4f4f5;
+  --accent-foreground: #18181b;
 
-  --sidebar: oklch(0.05 0 0);
-  --sidebar-foreground: oklch(0.7 0 0);
-  --sidebar-primary: oklch(0.98 0 0);
-  --sidebar-border: oklch(0.12 0 0);
-  --sidebar-accent: oklch(0.12 0 0);
-  --sidebar-accent-foreground: oklch(0.98 0 0);
-  --sidebar-ring: oklch(0.25 0 0);
+  --destructive: #dc2626;
+  --destructive-foreground: #fafafa;
+
+  --border: #e7e7ea;
+  --input: #e4e4e7;
+  --ring: #a1a1aa;
+
+  --radius: 0.625rem;
+
+  --sidebar: #fafafa;
+  --sidebar-foreground: #52525b;
+  --sidebar-primary: #18181b;
+  --sidebar-primary-foreground: #fafafa;
+  --sidebar-accent: #f0f0f1;
+  --sidebar-accent-foreground: #18181b;
+  --sidebar-border: #e7e7ea;
+  --sidebar-ring: #a1a1aa;
 }
 
 .dark {
-  /* Same as root since we are enforcing Dark Mode B/W */
-  --background: oklch(0.05 0 0);
-  --foreground: oklch(0.98 0 0);
-  --card: oklch(0.08 0 0);
-  --card-foreground: oklch(0.98 0 0);
-  --popover: oklch(0.08 0 0);
-  --popover-foreground: oklch(0.98 0 0);
-  --primary: oklch(0.98 0 0);
-  --primary-foreground: oklch(0.05 0 0);
-  --secondary: oklch(0.2 0 0);
-  --secondary-foreground: oklch(0.98 0 0);
-  --muted: oklch(0.15 0 0);
-  --muted-foreground: oklch(0.6 0 0);
-  --accent: oklch(0.15 0 0);
-  --accent-foreground: oklch(0.98 0 0);
-  --destructive: oklch(0.5 0.2 27);
-  --destructive-foreground: oklch(0.98 0 0);
-  --border: oklch(0.15 0 0);
-  --input: oklch(0.15 0 0);
-  --ring: oklch(0.25 0 0);
-  --sidebar: oklch(0.05 0 0);
-  --sidebar-foreground: oklch(0.7 0 0);
-  --sidebar-primary: oklch(0.98 0 0);
-  --sidebar-primary-foreground: oklch(0.05 0 0);
-  --sidebar-accent: oklch(0.12 0 0);
-  --sidebar-accent-foreground: oklch(0.98 0 0);
-  --sidebar-border: oklch(0.12 0 0);
-  --sidebar-ring: oklch(0.25 0 0);
+  --background: #0b0b0c;
+  --foreground: #fafafa;
+
+  --card: #131315;
+  --card-foreground: #fafafa;
+
+  --popover: #131315;
+  --popover-foreground: #fafafa;
+
+  --primary: #fafafa;
+  --primary-foreground: #18181b;
+
+  --secondary: #1c1c1f;
+  --secondary-foreground: #fafafa;
+
+  --muted: #1c1c1f;
+  --muted-foreground: #8a8a8f;
+
+  --accent: #1f1f23;
+  --accent-foreground: #fafafa;
+
+  --destructive: #ef4444;
+  --destructive-foreground: #fafafa;
+
+  --border: #26262a;
+  --input: #2a2a2f;
+  --ring: #52525b;
+
+  --sidebar: #0b0b0c;
+  --sidebar-foreground: #8a8a8f;
+  --sidebar-primary: #fafafa;
+  --sidebar-primary-foreground: #18181b;
+  --sidebar-accent: #1c1c1f;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: #26262a;
+  --sidebar-ring: #52525b;
 }
 
 @theme inline {
-  --font-sans: "Geist", "Geist Fallback";
-  --font-serif: "Crimson Pro", serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -120,52 +131,44 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground antialiased selection:bg-white/20;
+    @apply bg-background text-foreground antialiased;
+  }
+  /* Headings stay in the same clean sans — tighter tracking is what makes them read as display type. */
+  h1, h2, h3, h4 {
+    @apply tracking-tight;
   }
 }
 
-/* Minimal Utilities */
-.glass-panel {
-  @apply bg-black/40 backdrop-blur-md border border-white/10;
+/* Small uppercase label above a heading. */
+.eyebrow {
+  @apply text-[11px] font-medium uppercase tracking-wider text-muted-foreground;
 }
 
-/* Removed Instagram gradients, replaced with minimal text styles if needed */
-.text-minimal-gradient {
-  @apply text-white;
+/* Tabular figures for metrics, so numbers don't jitter as they update. */
+.numeric {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }
 
-.hover-glow {
-  @apply transition-colors duration-200;
-}
-.hover-glow:hover {
-  @apply bg-white/5;
+.surface {
+  @apply bg-card border border-border rounded-xl;
 }
 
-.vercel-row-hover {
-  @apply transition-colors cursor-pointer;
-}
-.vercel-row-hover:hover {
-  background-color: rgba(255, 255, 255, 0.05);
-}
-
-/* Minimal Scrollbar */
+/* Subtle scrollbar that follows the theme. */
 ::-webkit-scrollbar {
-  width: 4px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
-  @apply bg-transparent;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-white/10 rounded-full transition-colors;
+  background-color: color-mix(in srgb, var(--muted-foreground) 30%, transparent);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-white/20;
-}
-
-/* Editorial type utilities (shared across app) */
-.font-serif-display {
-  font-family: 'Instrument Serif', Georgia, serif;
-}
-.font-mono-ui {
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  background-color: color-mix(in srgb, var(--muted-foreground) 55%, transparent);
+  background-clip: content-box;
 }

@@ -22,7 +22,7 @@ export function MobileNav({ username, profilePic, onLogout }: MobileNavProps) {
                     <Menu className="h-6 w-6" />
                 </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="p-0 border-r border-white/10 bg-black w-72">
+            <SheetContent side="left" className="w-72 border-r border-border bg-sidebar p-0">
                 <Sidebar
                     className="h-full border-none bg-transparent"
                     username={username}

@@ -170,13 +170,13 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
 
     if (!conversationId) {
         return (
-            <div className="flex-1 flex items-center justify-center flex-col gap-4 text-center bg-black/40 h-full">
-                <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center">
-                    <Send className="w-6 h-6 text-muted-foreground" />
+            <div className="flex h-full flex-1 flex-col items-center justify-center gap-4 text-center">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-card">
+                    <Send className="h-5 w-5 text-muted-foreground" strokeWidth={1.8} />
                 </div>
                 <div>
-                    <h3 className="text-lg font-bold text-white">Your Messages</h3>
-                    <p className="text-muted-foreground text-sm max-w-xs mx-auto mt-2">
+                    <h3 className="text-base font-medium text-foreground">Your messages</h3>
+                    <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">
                         Select a conversation from the left to start chatting live with your audience.
                     </p>
                 </div>
@@ -187,20 +187,20 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
     const aiStatus = describeAi(aiState, agentEnabled)
 
     return (
-        <div className="flex-1 flex flex-col h-full bg-black/40 relative">
+        <div className="relative flex h-full flex-1 flex-col bg-background">
             {/* Header */}
-            <div className="h-16 border-b border-white/5 flex items-center justify-between px-4 md:px-6 bg-black/20 backdrop-blur-md shrink-0">
+            <div className="flex h-16 shrink-0 items-center justify-between border-b border-border px-4 md:px-5">
                 <div className="flex items-center gap-3">
                     {onBack && (
                         <Button variant="ghost" size="icon" onClick={onBack} className="md:hidden -ml-2 text-muted-foreground">
                             <ChevronLeft className="w-6 h-6" />
                         </Button>
                     )}
-                    <div className="w-8 h-8 rounded-full bg-white/10 border border-white/15 shrink-0" />
+                    <div className="w-8 h-8 rounded-full bg-muted border border-border shrink-0" />
                     <div className="min-w-0">
-                        <h3 className="font-bold text-white text-sm truncate">@{recipientName}</h3>
-                        <span className="hidden md:flex items-center gap-1.5 text-[10px] text-green-400">
-                            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                        <h3 className="truncate text-[13px] font-medium text-foreground">@{recipientName}</h3>
+                        <span className="hidden md:flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                             Online via Instagram
                         </span>
                     </div>
@@ -213,10 +213,10 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
                             disabled={aiBusy}
                             title={aiStatus.note || undefined}
                             className={cn(
-                                "flex items-center gap-1.5 h-8 px-3 rounded-full border text-[11px] font-semibold transition-colors disabled:opacity-50",
+                                "flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[12px] font-medium transition-colors disabled:opacity-50",
                                 aiStatus.active
-                                    ? "bg-[#ffe14d]/10 border-[#ffe14d]/40 text-[#ffe14d]"
-                                    : "border-white/10 text-muted-foreground hover:text-white hover:border-white/30"
+                                    ? "border-border bg-muted text-foreground"
+                                    : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
                             )}
                         >
                             {aiBusy
@@ -228,7 +228,7 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
                         {aiMenuOpen && (
                             <>
                                 <div className="fixed inset-0 z-40" onClick={() => setAiMenuOpen(false)} />
-                                <div className="absolute right-0 top-10 w-56 bg-black/90 border border-white/10 rounded-xl shadow-2xl backdrop-blur-xl p-1.5 z-50">
+                                <div className="absolute right-0 top-10 z-50 w-56 rounded-xl border border-border bg-popover p-1.5 shadow-md">
                                     {!agentEnabled && (
                                         <div className="px-2.5 py-2 text-[11px] text-muted-foreground">
                                             The AI agent is off for your whole account. Turn it on in Automations.
@@ -240,21 +240,21 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
                                                 <button
                                                     key={choice.minutes}
                                                     onClick={() => updateAi("pause", choice.minutes)}
-                                                    className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-white/10 text-sm text-white transition-colors"
+                                                    className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-muted text-sm text-foreground transition-colors"
                                                 >
                                                     {choice.label}
                                                 </button>
                                             ))}
-                                            <div className="h-px bg-white/10 my-1" />
+                                            <div className="h-px bg-muted my-1" />
                                             <button
                                                 onClick={() => updateAi("stop")}
-                                                className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-white/10 text-sm text-red-400 transition-colors"
+                                                className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-muted text-sm text-destructive transition-colors"
                                             >
                                                 Stop AI in this chat
                                             </button>
                                             <button
                                                 onClick={() => updateAi("resume")}
-                                                className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-white/10 text-sm text-[#ffe14d] transition-colors"
+                                                className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-muted text-sm text-foreground transition-colors"
                                             >
                                                 Resume now
                                             </button>
@@ -264,9 +264,9 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
                             </>
                         )}
                     </div>
-                    <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-white hidden md:flex"><Phone className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-white hidden md:flex"><Video className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-white"><MoreVertical className="w-4 h-4" /></Button>
+                    <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground hidden md:flex"><Phone className="w-4 h-4" /></Button>
+                    <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground hidden md:flex"><Video className="w-4 h-4" /></Button>
+                    <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground"><MoreVertical className="w-4 h-4" /></Button>
                 </div>
             </div>
 
@@ -274,7 +274,7 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
             <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6">
                 {loading ? (
                     <div className="flex justify-center py-10">
-                        <Loader2 className="w-8 h-8 text-white/20 animate-spin" />
+                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                     </div>
                 ) : (
                     messages.map((msg) => {
@@ -282,15 +282,15 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
                         return (
                             <div key={msg.id} className={cn("flex w-full", isMe ? "justify-end" : "justify-start")}>
                                 <div className={cn(
-                                    "max-w-[85%] md:max-w-[70%] rounded-2xl px-4 py-3 text-sm shadow-sm break-words",
+                                    "max-w-[85%] break-words rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed md:max-w-[70%]",
                                     isMe
-                                        ? "bg-[#ffe14d] text-black rounded-br-none"
-                                        : "bg-white/10 text-white rounded-bl-none border border-white/5"
+                                        ? "rounded-br-md bg-primary text-primary-foreground"
+                                        : "rounded-bl-md border border-border bg-muted text-foreground"
                                 )}>
                                     {msg.content}
                                     <div className={cn(
-                                        "text-[10px] mt-1 opacity-70",
-                                        isMe ? "text-black/50 text-right" : "text-neutral-500"
+                                        "mt-1 text-[11px] opacity-70",
+                                        isMe ? "text-primary-foreground/60 text-right" : "text-muted-foreground"
                                     )}>
                                         {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </div>
@@ -304,16 +304,16 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
 
             {/* Automation Popup */}
             {isAutomationOpen && (
-                <div className="absolute bottom-20 left-4 right-4 md:left-auto md:right-4 md:w-80 bg-black/90 border border-white/10 rounded-xl shadow-2xl backdrop-blur-xl p-2 z-50">
-                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Quick Responses</div>
+                <div className="absolute bottom-20 left-4 right-4 z-50 rounded-xl border border-border bg-popover p-2 shadow-md md:left-auto md:right-4 md:w-80">
+                    <div className="mb-1 px-2 py-1.5 text-[11px] font-medium text-muted-foreground">Quick responses</div>
                     <div className="max-h-60 overflow-y-auto space-y-1">
                         {automations.map(auto => (
                             <button
                                 key={auto.id}
                                 onClick={() => handleSendMessage(auto.response_content?.message || auto.name)}
-                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 text-sm text-white transition-colors flex items-center gap-2"
+                                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] text-foreground transition-colors hover:bg-muted"
                             >
-                                <Zap className="w-3 h-3 text-yellow-400" />
+                                <Zap className="h-3.5 w-3.5 text-muted-foreground" />
                                 <span className="truncate">{auto.name}</span>
                             </button>
                         ))}
@@ -325,18 +325,18 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
             )}
 
             {/* Input Area */}
-            <div className="p-3 md:p-4 border-t border-white/5 bg-black/40 shrink-0">
-                <div className="flex items-center gap-2 bg-white/5 rounded-xl border border-white/10 p-1.5 focus-within:border-[#ffe14d]/50 transition-all">
+            <div className="shrink-0 border-t border-border p-3 md:p-4">
+                <div className="flex items-center gap-2 rounded-xl border border-border bg-card p-1.5 transition-colors focus-within:border-ring">
                     <Button
                         size="icon"
                         variant="ghost"
                         onClick={() => setIsAutomationOpen(!isAutomationOpen)}
-                        className={cn("h-9 w-9 hover:bg-white/10 text-muted-foreground hover:text-yellow-400 transition-colors shrink-0", isAutomationOpen && "text-yellow-400 bg-yellow-400/10")}
+                        className={cn("h-9 w-9 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0", isAutomationOpen && "text-foreground bg-muted")}
                     >
-                        <Zap className="w-5 h-5" />
+                        <Zap className="h-4 w-4" />
                     </Button>
                     <input
-                        className="flex-1 bg-transparent px-3 py-2 text-sm text-white focus:outline-none placeholder:text-muted-foreground/50 min-w-0"
+                        className="min-w-0 flex-1 bg-transparent px-2 py-2 text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none"
                         placeholder="Type a message..."
                         value={inputText}
                         onChange={(e) => setInputText(e.target.value)}
@@ -352,7 +352,7 @@ export function ChatWindow({ conversationId, recipientId, recipientName, userId,
                         onClick={() => handleSendMessage()}
                         disabled={sending || !inputText.trim()}
                         size="icon"
-                        className="h-9 w-9 bg-[#ffe14d] hover:brightness-95 text-black rounded-lg disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                        className="h-9 w-9 shrink-0 rounded-lg disabled:opacity-50"
                     >
                         {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                     </Button>

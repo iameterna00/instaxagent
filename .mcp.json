@@ -2,6 +2,11 @@
   "mcpServers": {
     "supabase": {
       "serverUrl": "https://mcp.supabase.com/mcp?project_ref=xmllcdomcmydtqqvoobg"
+    },
+    "codegraph": {
+      "type": "stdio",
+      "command": "codegraph",
+      "args": ["serve", "--mcp"]
     }
   }
 }

@@ -37,25 +37,25 @@ function AnalyzedPosts({ posts }: { posts: OwnPost[] }) {
     const shown = expanded ? ranked : ranked.slice(0, 8)
 
     return (
-        <div className="rounded-2xl border border-white/10 bg-[#0b0b0a] p-6 space-y-4">
+        <div className="rounded-xl border border-border bg-card p-6 space-y-4">
             <div className="flex items-center justify-between gap-4 flex-wrap">
                 <span className={label}>
                     {hasViews ? "Your posts, best performing first" : "Posts it read"}
                 </span>
-                <span className="text-[10px] text-neutral-600">{posts.length} analysed</span>
+                <span className="text-[10px] text-muted-foreground">{posts.length} analysed</span>
             </div>
 
             {!hasViews && (
-                <div className="text-[11px] text-neutral-500 flex items-start gap-1.5">
-                    <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0 text-neutral-600" />
+                <div className="text-[11px] text-muted-foreground flex items-start gap-1.5">
+                    <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0 text-muted-foreground" />
                     <span>
                         No view or reach numbers came back, so this plan was built from captions and formats only. To fix
                         it, both steps are needed:
-                        <span className="block mt-1.5 text-neutral-400">
+                        <span className="block mt-1.5 text-muted-foreground">
                             1. In your Meta app dashboard → Instagram API → Customize use case, add the{" "}
-                            <code className="text-[#ffe14d]">instagram_business_manage_insights</code> permission.
+                            <code className="text-foreground">instagram_business_manage_insights</code> permission.
                         </span>
-                        <span className="block mt-0.5 text-neutral-400">
+                        <span className="block mt-0.5 text-muted-foreground">
                             2. Log out and reconnect Instagram so the new token carries it, then regenerate.
                         </span>
                     </span>
@@ -73,24 +73,24 @@ function AnalyzedPosts({ posts }: { posts: OwnPost[] }) {
                             target="_blank"
                             rel="noreferrer"
                             title={post.caption?.slice(0, 160) || "View on Instagram"}
-                            className="group relative aspect-square rounded-lg overflow-hidden border border-white/10 bg-white/[0.03] hover:border-[#ffe14d]/40 transition-colors"
+                            className="group relative aspect-square rounded-lg overflow-hidden border border-border bg-muted/60 hover:border-foreground/40 transition-colors"
                         >
                             {thumb ? (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img src={thumb} alt="" className="w-full h-full object-cover" loading="lazy" />
                             ) : (
                                 <div className="w-full h-full flex items-center justify-center">
-                                    <Film className="w-4 h-4 text-neutral-700" />
+                                    <Film className="w-4 h-4 text-muted-foreground" />
                                 </div>
                             )}
 
                             {post.media_product_type === "REELS" && (
-                                <Film className="absolute top-1.5 right-1.5 w-3 h-3 text-white drop-shadow" />
+                                <Film className="absolute top-1.5 right-1.5 w-3 h-3 text-foreground drop-shadow" />
                             )}
 
                             {metric !== undefined && (
                                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent px-1.5 pt-4 pb-1.5">
-                                    <span className="flex items-center gap-1 text-[10px] font-semibold text-white">
+                                    <span className="flex items-center gap-1 text-[10px] font-semibold text-foreground">
                                         <Eye className="w-2.5 h-2.5" />
                                         {compact(metric)}
                                     </span>
@@ -104,7 +104,7 @@ function AnalyzedPosts({ posts }: { posts: OwnPost[] }) {
             {ranked.length > 8 && (
                 <button
                     onClick={() => setExpanded(!expanded)}
-                    className="text-[11px] font-mono-ui uppercase tracking-widest text-neutral-500 hover:text-[#ffe14d] transition-colors"
+                    className="text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
                 >
                     {expanded ? "Show less" : `Show all ${ranked.length}`}
                 </button>
@@ -115,9 +115,9 @@ function AnalyzedPosts({ posts }: { posts: OwnPost[] }) {
 
 const FORMATS = ["reel", "carousel", "story", "post"]
 
-const label = "font-mono-ui text-[10px] uppercase tracking-[0.2em] text-neutral-500"
+const label = "text-[13px] font-medium text-foreground"
 const field =
-    "w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-neutral-600 focus:outline-none focus:border-[#ffe14d]/50 transition-colors"
+    "w-full rounded-lg border border-border bg-background px-3 py-2.5 text-[13px] text-foreground transition-colors placeholder:text-muted-foreground focus:border-ring focus:outline-none"
 
 function CopyButton({ text, className = "" }: { text: string; className?: string }) {
     const [copied, setCopied] = useState(false)
@@ -128,10 +128,10 @@ function CopyButton({ text, className = "" }: { text: string; className?: string
                 setCopied(true)
                 setTimeout(() => setCopied(false), 1500)
             }}
-            className={`text-neutral-500 hover:text-[#ffe14d] transition-colors ${className}`}
+            className={`text-muted-foreground hover:text-foreground transition-colors ${className}`}
             title="Copy"
         >
-            {copied ? <Check className="w-3.5 h-3.5 text-[#ffe14d]" /> : <Copy className="w-3.5 h-3.5" />}
+            {copied ? <Check className="w-3.5 h-3.5 text-foreground" /> : <Copy className="w-3.5 h-3.5" />}
         </button>
     )
 }
@@ -151,31 +151,31 @@ function IdeaCard({ idea, index }: { idea: ContentIdea; index: number }) {
     ].filter(Boolean).join("\n")
 
     return (
-        <div className="rounded-2xl border border-white/10 bg-[#0b0b0a] overflow-hidden">
+        <div className="rounded-xl border border-border bg-card overflow-hidden">
             <button
                 onClick={() => setOpen(!open)}
-                className="w-full flex items-start gap-3 p-5 text-left hover:bg-white/[0.02] transition-colors"
+                className="w-full flex items-start gap-3 p-5 text-left hover:bg-muted/60 transition-colors"
             >
-                <span className="font-mono-ui text-[10px] text-neutral-600 mt-1 shrink-0">
+                <span className="numeric mt-0.5 shrink-0 text-[11px] text-muted-foreground">
                     {String(index + 1).padStart(2, "0")}
                 </span>
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono-ui text-[9px] uppercase tracking-widest px-2 py-0.5 rounded-full bg-[#ffe14d]/10 text-[#ffe14d] border border-[#ffe14d]/25">
+                        <span className="rounded-md border border-border bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
                             {idea.format}
                         </span>
-                        <span className="text-white font-medium text-sm">{idea.title}</span>
+                        <span className="text-foreground font-medium text-sm">{idea.title}</span>
                     </div>
-                    <p className="text-sm text-neutral-400 mt-2 italic">&ldquo;{idea.hook}&rdquo;</p>
+                    <p className="text-sm text-muted-foreground mt-2 italic">&ldquo;{idea.hook}&rdquo;</p>
                 </div>
-                <ChevronDown className={`w-4 h-4 text-neutral-600 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+                <ChevronDown className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
             </button>
 
             {open && (
-                <div className="px-5 pb-5 space-y-4 border-t border-white/5 pt-4">
+                <div className="px-5 pb-5 space-y-4 border-t border-border pt-4">
                     {idea.why_it_works && (
-                        <p className="text-xs text-neutral-500">
-                            <span className="text-neutral-400">Why:</span> {idea.why_it_works}
+                        <p className="text-xs text-muted-foreground">
+                            <span className="text-muted-foreground">Why:</span> {idea.why_it_works}
                         </p>
                     )}
 
@@ -187,8 +187,8 @@ function IdeaCard({ idea, index }: { idea: ContentIdea; index: number }) {
                             </div>
                             <ol className="space-y-2">
                                 {idea.script.map((beat, i) => (
-                                    <li key={i} className="flex gap-3 text-sm text-neutral-300">
-                                        <span className="font-mono-ui text-[10px] text-[#ffe14d] mt-1 shrink-0">{i + 1}</span>
+                                    <li key={i} className="flex gap-3 text-sm text-foreground">
+                                        <span className="numeric mt-0.5 shrink-0 text-[11px] text-muted-foreground">{i + 1}</span>
                                         <span>{beat}</span>
                                     </li>
                                 ))}
@@ -202,7 +202,7 @@ function IdeaCard({ idea, index }: { idea: ContentIdea; index: number }) {
                                 <span className={label}>Caption</span>
                                 <CopyButton text={idea.caption} />
                             </div>
-                            <p className="text-sm text-neutral-300 whitespace-pre-wrap bg-black/40 rounded-xl p-4 border border-white/5">
+                            <p className="text-sm text-foreground whitespace-pre-wrap bg-background/40 rounded-xl p-4 border border-border">
                                 {idea.caption}
                             </p>
                         </div>
@@ -211,17 +211,17 @@ function IdeaCard({ idea, index }: { idea: ContentIdea; index: number }) {
                     <div className="flex items-end justify-between gap-4 flex-wrap">
                         <div className="space-y-2">
                             {idea.cta && (
-                                <p className="text-xs text-neutral-400">
+                                <p className="text-xs text-muted-foreground">
                                     <span className={label}>CTA</span> <span className="ml-2">{idea.cta}</span>
                                 </p>
                             )}
                             {idea.hashtags && idea.hashtags.length > 0 && (
-                                <p className="text-xs text-neutral-600">{idea.hashtags.map(h => `#${h}`).join(" ")}</p>
+                                <p className="text-xs text-muted-foreground">{idea.hashtags.map(h => `#${h}`).join(" ")}</p>
                             )}
                         </div>
                         <button
                             onClick={() => navigator.clipboard.writeText(fullText)}
-                            className="text-[11px] font-mono-ui uppercase tracking-widest text-neutral-500 hover:text-[#ffe14d] transition-colors flex items-center gap-1.5"
+                            className="flex items-center gap-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
                         >
                             <Copy className="w-3 h-3" /> Copy all
                         </button>
@@ -309,14 +309,14 @@ export function ContentStudio({ userId }: { userId: string }) {
     return (
         <div className="space-y-8">
             {/* Brief */}
-            <div className="rounded-2xl border border-white/10 bg-[#0b0b0a] p-6 space-y-5">
+            <div className="space-y-5 rounded-xl border border-border bg-card p-5 md:p-6">
                 <div className="flex items-start gap-3">
-                    <div className="w-9 h-9 rounded-full bg-[#ffe14d]/10 border border-[#ffe14d]/25 flex items-center justify-center shrink-0">
-                        <Target className="w-4 h-4 text-[#ffe14d]" />
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground">
+                        <Target className="h-4 w-4" strokeWidth={1.8} />
                     </div>
                     <div>
-                        <h2 className="text-white font-semibold">What are you trying to achieve?</h2>
-                        <p className="text-xs text-neutral-500 mt-1">
+                        <h2 className="text-sm font-medium text-foreground">What are you trying to achieve?</h2>
+                        <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
                             The studio reads your last 25 posts, then plans against this goal.
                         </p>
                     </div>
@@ -361,8 +361,8 @@ export function ContentStudio({ userId }: { userId: string }) {
                                     onClick={() => toggleFormat(f)}
                                     className={`px-3 h-9 rounded-lg text-xs font-medium border capitalize transition-colors ${
                                         formats.includes(f)
-                                            ? "bg-[#ffe14d]/10 border-[#ffe14d]/40 text-[#ffe14d]"
-                                            : "border-white/10 text-neutral-400 hover:text-white hover:border-white/30"
+                                            ? "bg-muted border-foreground/40 text-foreground"
+                                            : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/30"
                                     }`}
                                 >
                                     {f}
@@ -378,7 +378,7 @@ export function ContentStudio({ userId }: { userId: string }) {
                             className={`${field} mt-2 appearance-none`}
                         >
                             {[3, 5, 8, 10].map(n => (
-                                <option key={n} value={n} className="bg-[#0b0b0a]">{n} ideas</option>
+                                <option key={n} value={n} className="bg-card">{n} ideas</option>
                             ))}
                         </select>
                     </div>
@@ -393,7 +393,7 @@ export function ContentStudio({ userId }: { userId: string }) {
                         placeholder="Describe them — Instagram's API won't let this app read other people's posts, so tell it what they do. e.g. @someone posts 30s 'day in the life' reels with text-on-screen and a hard CTA at the end; @another does before/after carousels."
                         className={`${field} mt-2 resize-y leading-relaxed`}
                     />
-                    <p className="text-[11px] text-neutral-600 mt-2 flex items-start gap-1.5">
+                    <p className="text-[11px] text-muted-foreground mt-2 flex items-start gap-1.5">
                         <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
                         Competitor posts can&apos;t be fetched automatically on this login type — whatever you write here is
                         what it knows about them.
@@ -403,9 +403,9 @@ export function ContentStudio({ userId }: { userId: string }) {
                 <div className="flex items-center justify-between gap-4 flex-wrap pt-1">
                     <div className="text-xs">
                         {error ? (
-                            <span className="text-red-400">{error}</span>
+                            <span className="text-destructive">{error}</span>
                         ) : (
-                            <span className="text-neutral-600">Uses the same API key as your AI agent.</span>
+                            <span className="text-muted-foreground">Uses the same API key as your AI agent.</span>
                         )}
                     </div>
                     <div className="flex items-center gap-2">
@@ -413,7 +413,7 @@ export function ContentStudio({ userId }: { userId: string }) {
                             onClick={runCheck}
                             disabled={checking}
                             title="Check that Instagram posts and insights are readable — costs no AI tokens"
-                            className="flex items-center gap-2 h-9 px-4 rounded-full border border-white/10 text-neutral-400 hover:text-white hover:border-white/30 font-mono-ui text-[11px] font-bold uppercase tracking-widest transition-colors disabled:opacity-50"
+                            className="flex h-9 items-center gap-2 rounded-lg border border-border px-3.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
                         >
                             {checking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
                             Check access
@@ -421,7 +421,7 @@ export function ContentStudio({ userId }: { userId: string }) {
                         {history.length > 0 && (
                             <button
                                 onClick={() => setShowHistory(!showHistory)}
-                                className="flex items-center gap-2 h-9 px-4 rounded-full border border-white/10 text-neutral-400 hover:text-white hover:border-white/30 font-mono-ui text-[11px] font-bold uppercase tracking-widest transition-colors"
+                                className="flex h-9 items-center gap-2 rounded-lg border border-border px-3.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                             >
                                 <History className="w-3.5 h-3.5" />
                                 {history.length}
@@ -430,7 +430,7 @@ export function ContentStudio({ userId }: { userId: string }) {
                         <button
                             onClick={generate}
                             disabled={generating || !goal.trim()}
-                            className="flex items-center gap-2 h-9 px-5 rounded-full bg-[#ffe14d] hover:brightness-95 text-black font-mono-ui text-[11px] font-bold uppercase tracking-widest transition-all active:scale-95 disabled:opacity-40"
+                            className="flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-[13px] font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
                         >
                             {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
                             {generating ? "Planning…" : "Generate"}
@@ -439,7 +439,7 @@ export function ContentStudio({ userId }: { userId: string }) {
                 </div>
 
                 {generating && (
-                    <p className="text-[11px] text-neutral-600">
+                    <p className="text-[11px] text-muted-foreground">
                         Reading your posts and thinking it through — this usually takes 30–90 seconds.
                     </p>
                 )}
@@ -448,17 +448,17 @@ export function ContentStudio({ userId }: { userId: string }) {
                     <div
                         className={`rounded-xl border px-4 py-3 text-xs flex items-start gap-2 ${
                             check.ok
-                                ? "border-[#ffe14d]/30 bg-[#ffe14d]/[0.06] text-neutral-300"
-                                : "border-white/10 bg-white/[0.02] text-neutral-400"
+                                ? "border-foreground/40 bg-muted text-foreground"
+                                : "border-border bg-muted/60 text-muted-foreground"
                         }`}
                     >
                         {check.ok
-                            ? <Check className="w-3.5 h-3.5 text-[#ffe14d] mt-0.5 shrink-0" />
-                            : <AlertTriangle className="w-3.5 h-3.5 text-neutral-600 mt-0.5 shrink-0" />}
+                            ? <Check className="w-3.5 h-3.5 text-foreground mt-0.5 shrink-0" />
+                            : <AlertTriangle className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />}
                         <span>
                             {check.reason}
                             {check.ok && check.sample && (
-                                <span className="block text-neutral-500 mt-1">
+                                <span className="block text-muted-foreground mt-1">
                                     Sample from your account: {check.sample.views !== undefined && `${compact(check.sample.views)} views`}
                                     {check.sample.views !== undefined && check.sample.reach !== undefined && " · "}
                                     {check.sample.reach !== undefined && `${compact(check.sample.reach)} reach`}
@@ -472,16 +472,16 @@ export function ContentStudio({ userId }: { userId: string }) {
 
             {/* History */}
             {showHistory && (
-                <div className="rounded-2xl border border-white/10 bg-[#0b0b0a] divide-y divide-white/5">
+                <div className="rounded-xl border border-border bg-card divide-y divide-border">
                     {history.map(item => (
-                        <div key={item.id} className="flex items-center gap-4 p-4 hover:bg-white/[0.02] transition-colors">
+                        <div key={item.id} className="flex items-center gap-4 p-4 hover:bg-muted/60 transition-colors">
                             <button onClick={() => { setPlan(item); setShowHistory(false) }} className="flex-1 text-left min-w-0">
-                                <p className="text-sm text-white truncate">{item.goal}</p>
-                                <p className="text-[11px] text-neutral-600 mt-0.5">
+                                <p className="text-sm text-foreground truncate">{item.goal}</p>
+                                <p className="text-[11px] text-muted-foreground mt-0.5">
                                     {new Date(item.created_at).toLocaleDateString()} · {item.ideas?.length ?? 0} ideas · {item.model}
                                 </p>
                             </button>
-                            <button onClick={() => remove(item.id)} className="text-neutral-600 hover:text-red-400 transition-colors shrink-0">
+                            <button onClick={() => remove(item.id)} className="text-muted-foreground hover:text-destructive transition-colors shrink-0">
                                 <Trash2 className="w-4 h-4" />
                             </button>
                         </div>
@@ -495,17 +495,17 @@ export function ContentStudio({ userId }: { userId: string }) {
                     {plan.posts && plan.posts.length > 0 && <AnalyzedPosts posts={plan.posts} />}
 
                     {plan.analysis && (
-                        <div className="rounded-2xl border border-[#ffe14d]/20 bg-[#ffe14d]/[0.04] p-6 space-y-4">
+                        <div className="rounded-2xl border border-foreground/40 bg-muted p-6 space-y-4">
                             <div className="flex items-center justify-between gap-4 flex-wrap">
                                 <span className={label}>Read on your account</span>
-                                <span className="text-[10px] text-neutral-600">
+                                <span className="text-[10px] text-muted-foreground">
                                     {plan.posts_analyzed} posts analysed · {plan.model}
                                 </span>
                             </div>
 
-                            {plan.analysis.niche && <p className="text-white text-sm font-medium">{plan.analysis.niche}</p>}
+                            {plan.analysis.niche && <p className="text-foreground text-sm font-medium">{plan.analysis.niche}</p>}
                             {plan.analysis.positioning && (
-                                <p className="text-sm text-neutral-300 leading-relaxed">{plan.analysis.positioning}</p>
+                                <p className="text-sm text-foreground leading-relaxed">{plan.analysis.positioning}</p>
                             )}
 
                             <div className="grid sm:grid-cols-2 gap-5 pt-1">
@@ -514,8 +514,8 @@ export function ContentStudio({ userId }: { userId: string }) {
                                         <span className={label}>Working</span>
                                         <ul className="mt-2 space-y-1.5">
                                             {plan.analysis.what_is_working!.map((s, i) => (
-                                                <li key={i} className="text-xs text-neutral-400 flex gap-2">
-                                                    <span className="text-[#ffe14d]">+</span>{s}
+                                                <li key={i} className="text-xs text-muted-foreground flex gap-2">
+                                                    <span className="text-foreground">+</span>{s}
                                                 </li>
                                             ))}
                                         </ul>
@@ -526,8 +526,8 @@ export function ContentStudio({ userId }: { userId: string }) {
                                         <span className={label}>Gaps</span>
                                         <ul className="mt-2 space-y-1.5">
                                             {plan.analysis.gaps!.map((s, i) => (
-                                                <li key={i} className="text-xs text-neutral-400 flex gap-2">
-                                                    <span className="text-neutral-600">−</span>{s}
+                                                <li key={i} className="text-xs text-muted-foreground flex gap-2">
+                                                    <span className="text-muted-foreground">−</span>{s}
                                                 </li>
                                             ))}
                                         </ul>

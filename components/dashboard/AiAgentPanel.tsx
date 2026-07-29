@@ -38,9 +38,9 @@ const TAKEOVER_CHOICES = [
     { minutes: 0, label: "Until I resume" },
 ]
 
-const label = "font-mono-ui text-[10px] uppercase tracking-[0.2em] text-neutral-500"
+const label = "text-[13px] font-medium text-foreground"
 const field =
-    "w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-neutral-600 focus:outline-none focus:border-[#ffe14d]/50 transition-colors"
+    "w-full rounded-lg border border-border bg-background px-3 py-2.5 text-[13px] text-foreground transition-colors placeholder:text-muted-foreground focus:border-ring focus:outline-none"
 
 export function AiAgentPanel({ userId, onEnabledChange }: AiAgentPanelProps) {
     const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT)
@@ -135,8 +135,8 @@ export function AiAgentPanel({ userId, onEnabledChange }: AiAgentPanelProps) {
 
     if (loading) {
         return (
-            <div className="rounded-2xl border border-white/10 bg-[#0b0b0a] p-8 flex items-center justify-center">
-                <Loader2 className="w-5 h-5 text-neutral-500 animate-spin" />
+            <div className="rounded-2xl border border-border bg-card p-8 flex items-center justify-center">
+                <Loader2 className="w-5 h-5 text-muted-foreground animate-spin" />
             </div>
         )
     }
@@ -145,16 +145,16 @@ export function AiAgentPanel({ userId, onEnabledChange }: AiAgentPanelProps) {
     const canEnable = draft.has_api_key || draft.api_key.trim().length > 0
 
     return (
-        <div className="rounded-2xl border border-white/10 bg-[#0b0b0a] divide-y divide-white/5">
+        <div className="divide-y divide-border rounded-xl border border-border bg-card">
             {/* Header + master switch */}
             <div className="p-6 flex items-start justify-between gap-4 flex-wrap">
                 <div className="flex items-start gap-3">
-                    <div className="w-9 h-9 rounded-full bg-[#ffe14d]/10 border border-[#ffe14d]/25 flex items-center justify-center shrink-0">
-                        <Brain className="w-4 h-4 text-[#ffe14d]" />
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground">
+                        <Brain className="h-4 w-4" strokeWidth={1.8} />
                     </div>
                     <div>
-                        <h2 className="text-white font-semibold">AI Agent</h2>
-                        <p className="text-xs text-neutral-500 mt-1 max-w-md">
+                        <h2 className="text-sm font-medium text-foreground">AI agent</h2>
+                        <p className="mt-1 max-w-md text-[13px] leading-relaxed text-muted-foreground">
                             Answers DMs that none of your rules match. Each person gets their own conversation, with the
                             recent history as context.
                         </p>
@@ -163,19 +163,19 @@ export function AiAgentPanel({ userId, onEnabledChange }: AiAgentPanelProps) {
                 {/* Master switch. Deliberately loud — an agent that is saved but
                     switched off looks identical to a broken one. */}
                 <div
-                    className={`flex items-center gap-3 rounded-2xl border px-4 py-3 transition-colors ${
-                        draft.is_enabled ? "border-[#ffe14d]/40 bg-[#ffe14d]/[0.07]" : "border-white/10 bg-white/[0.02]"
+                    className={`flex items-center gap-3 rounded-xl border px-3.5 py-2.5 transition-colors ${
+                        draft.is_enabled ? "border-border bg-muted" : "border-border bg-background"
                     }`}
                 >
                     <div className="text-right">
                         <div
-                            className={`font-mono-ui text-[11px] font-bold uppercase tracking-widest ${
-                                draft.is_enabled ? "text-[#ffe14d]" : "text-neutral-500"
+                            className={`text-[13px] font-medium ${
+                                draft.is_enabled ? "text-foreground" : "text-muted-foreground"
                             }`}
                         >
                             {draft.is_enabled ? "Agent on" : "Agent off"}
                         </div>
-                        <div className="text-[10px] text-neutral-600 mt-0.5">
+                        <div className="mt-0.5 text-[11px] text-muted-foreground">
                             {draft.is_enabled ? "Replying to DMs" : "Not replying"}
                         </div>
                     </div>
@@ -185,17 +185,17 @@ export function AiAgentPanel({ userId, onEnabledChange }: AiAgentPanelProps) {
                         title={!canEnable ? "Add an API key first" : draft.is_enabled ? "Turn the agent off" : "Turn the agent on"}
                         aria-pressed={draft.is_enabled}
                         className={`shrink-0 w-14 h-8 rounded-full transition-colors relative disabled:opacity-40 disabled:cursor-not-allowed ${
-                            draft.is_enabled ? "bg-[#ffe14d]" : "bg-white/10"
+                            draft.is_enabled ? "bg-primary" : "bg-muted"
                         }`}
                     >
                         <span
-                            className={`absolute top-1 w-6 h-6 rounded-full bg-black flex items-center justify-center transition-transform ${
+                            className={`absolute top-1 w-6 h-6 rounded-full bg-background flex items-center justify-center transition-transform ${
                                 draft.is_enabled ? "translate-x-7" : "translate-x-1"
                             }`}
                         >
                             {saving
-                                ? <Loader2 className="w-3 h-3 text-white animate-spin" />
-                                : <Sparkles className={`w-3 h-3 ${draft.is_enabled ? "text-[#ffe14d]" : "text-neutral-500"}`} />}
+                                ? <Loader2 className="w-3 h-3 text-foreground animate-spin" />
+                                : <Sparkles className={`w-3 h-3 ${draft.is_enabled ? "text-foreground" : "text-muted-foreground"}`} />}
                         </span>
                     </button>
                 </div>
@@ -214,8 +214,8 @@ export function AiAgentPanel({ userId, onEnabledChange }: AiAgentPanelProps) {
                                 }
                                 className={`h-10 rounded-xl text-sm font-medium transition-colors border ${
                                     draft.provider === p.id
-                                        ? "bg-[#ffe14d] text-black border-[#ffe14d]"
-                                        : "border-white/10 text-neutral-400 hover:text-white hover:border-white/30"
+                                        ? "bg-primary text-primary-foreground border-foreground"
+                                        : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/30"
                                 }`}
                             >
                                 {p.label}
@@ -232,7 +232,7 @@ export function AiAgentPanel({ userId, onEnabledChange }: AiAgentPanelProps) {
                         className={`${field} mt-2 appearance-none`}
                     >
                         {modelsFor(draft.provider).map((m) => (
-                            <option key={m.id} value={m.id} className="bg-[#0b0b0a]">
+                            <option key={m.id} value={m.id} className="bg-card">
                                 {m.label}
                                 {m.hint ? ` — ${m.hint}` : ""}
                             </option>
@@ -247,7 +247,7 @@ export function AiAgentPanel({ userId, onEnabledChange }: AiAgentPanelProps) {
                             href={provider.keyUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="text-[10px] text-neutral-500 hover:text-[#ffe14d] flex items-center gap-1 transition-colors"
+                            className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
                         >
                             Get a key <ExternalLink className="w-3 h-3" />
                         </a>
@@ -265,12 +265,12 @@ export function AiAgentPanel({ userId, onEnabledChange }: AiAgentPanelProps) {
                         <button
                             type="button"
                             onClick={() => setShowKey(!showKey)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white transition-colors"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                         >
                             {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                         </button>
                     </div>
-                    <p className="text-[11px] text-neutral-600 mt-2">
+                    <p className="text-[11px] text-muted-foreground mt-2">
                         Your key is stored on your Supabase project and is never sent to the browser. Usage is billed to
                         your own {provider.label} account.
                     </p>
@@ -280,7 +280,7 @@ export function AiAgentPanel({ userId, onEnabledChange }: AiAgentPanelProps) {
             {/* Prompt */}
             <div className="p-6 space-y-2">
                 <span className={label}>Prompt</span>
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-muted-foreground">
                     Who you are, what you sell, your tone, what to say and what to avoid. The more specific, the better it
                     sounds.
                 </p>
@@ -308,23 +308,23 @@ Never promise specific results or timelines.`}
                                 onClick={() => patch({ audience_mode: opt.id as AudienceMode })}
                                 className={`text-left px-4 py-3 rounded-xl border transition-colors ${
                                     draft.audience_mode === opt.id
-                                        ? "border-[#ffe14d]/50 bg-[#ffe14d]/[0.07]"
-                                        : "border-white/10 hover:border-white/25"
+                                        ? "border-foreground/40 bg-muted"
+                                        : "border-border hover:border-foreground/30"
                                 }`}
                             >
                                 <div
                                     className={`text-sm font-medium ${
-                                        draft.audience_mode === opt.id ? "text-[#ffe14d]" : "text-white"
+                                        draft.audience_mode === opt.id ? "text-foreground" : "text-foreground"
                                     }`}
                                 >
                                     {opt.label}
                                 </div>
-                                <div className="text-[11px] text-neutral-500 mt-0.5">{opt.hint}</div>
+                                <div className="text-[11px] text-muted-foreground mt-0.5">{opt.hint}</div>
                             </button>
                         ))}
                     </div>
                     {draft.audience_mode !== "all" && (
-                        <p className="text-[11px] text-neutral-600 mt-2">
+                        <p className="text-[11px] text-muted-foreground mt-2">
                             If Instagram doesn&apos;t tell us the follow status for someone, the agent stays quiet rather
                             than guessing.
                         </p>
@@ -340,7 +340,7 @@ Never promise specific results or timelines.`}
                             placeholder="@username, then Enter"
                         />
                     </div>
-                    <p className="text-[11px] text-neutral-600 mt-2">
+                    <p className="text-[11px] text-muted-foreground mt-2">
                         Usernames or Instagram IDs. These are skipped no matter which audience rule is set.
                     </p>
                 </div>
@@ -351,7 +351,7 @@ Never promise specific results or timelines.`}
                 <div className="flex items-center justify-between gap-4">
                     <div>
                         <span className={label}>When you reply yourself</span>
-                        <p className="text-xs text-neutral-500 mt-1 max-w-md">
+                        <p className="mt-1 max-w-md text-[13px] leading-relaxed text-muted-foreground">
                             Reply from the inbox or the Instagram app and the agent steps back so it doesn&apos;t talk over
                             you.
                         </p>
@@ -359,11 +359,11 @@ Never promise specific results or timelines.`}
                     <button
                         onClick={() => patch({ pause_on_human_reply: !draft.pause_on_human_reply })}
                         className={`shrink-0 w-11 h-6 rounded-full transition-colors relative ${
-                            draft.pause_on_human_reply ? "bg-[#ffe14d]" : "bg-white/10"
+                            draft.pause_on_human_reply ? "bg-primary" : "bg-muted"
                         }`}
                     >
                         <span
-                            className={`absolute top-1 w-4 h-4 rounded-full bg-black transition-transform ${
+                            className={`absolute top-1 w-4 h-4 rounded-full bg-background transition-transform ${
                                 draft.pause_on_human_reply ? "translate-x-6" : "translate-x-1"
                             }`}
                         />
@@ -378,8 +378,8 @@ Never promise specific results or timelines.`}
                                 onClick={() => patch({ human_takeover_minutes: choice.minutes })}
                                 className={`px-3 h-8 rounded-lg text-xs font-medium border transition-colors ${
                                     draft.human_takeover_minutes === choice.minutes
-                                        ? "bg-[#ffe14d]/10 border-[#ffe14d]/40 text-[#ffe14d]"
-                                        : "border-white/10 text-neutral-400 hover:text-white hover:border-white/30"
+                                        ? "bg-muted border-foreground/40 text-foreground"
+                                        : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/30"
                                 }`}
                             >
                                 {choice.label}
@@ -393,7 +393,7 @@ Never promise specific results or timelines.`}
             <div className="p-6">
                 <button
                     onClick={() => setShowAdvanced(!showAdvanced)}
-                    className="flex items-center gap-2 text-neutral-500 hover:text-white transition-colors"
+                    className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
                 >
                     <ChevronDown className={`w-4 h-4 transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
                     <span className={label}>Delivery</span>
@@ -409,7 +409,7 @@ Never promise specific results or timelines.`}
                                 className={`${field} mt-2 appearance-none`}
                             >
                                 {[0, 2, 4, 6, 8].map((s) => (
-                                    <option key={s} value={s} className="bg-[#0b0b0a]">
+                                    <option key={s} value={s} className="bg-card">
                                         {s === 0 ? "Reply instantly" : `${s} seconds`}
                                     </option>
                                 ))}
@@ -423,7 +423,7 @@ Never promise specific results or timelines.`}
                                 className={`${field} mt-2 appearance-none`}
                             >
                                 {[300, 500, 700, 1000].map((c) => (
-                                    <option key={c} value={c} className="bg-[#0b0b0a]">
+                                    <option key={c} value={c} className="bg-card">
                                         {c} characters
                                     </option>
                                 ))}
@@ -437,7 +437,7 @@ Never promise specific results or timelines.`}
                                 className={`${field} mt-2 appearance-none`}
                             >
                                 {[6, 12, 20, 30].map((n) => (
-                                    <option key={n} value={n} className="bg-[#0b0b0a]">
+                                    <option key={n} value={n} className="bg-card">
                                         Last {n} messages
                                     </option>
                                 ))}
@@ -446,16 +446,16 @@ Never promise specific results or timelines.`}
                         <div className="flex items-end justify-between gap-4 pb-1">
                             <div>
                                 <span className={label}>Typing indicator</span>
-                                <p className="text-[11px] text-neutral-600 mt-1">Show &ldquo;typing…&rdquo; first</p>
+                                <p className="text-[11px] text-muted-foreground mt-1">Show &ldquo;typing…&rdquo; first</p>
                             </div>
                             <button
                                 onClick={() => patch({ typing_indicator: !draft.typing_indicator })}
                                 className={`shrink-0 w-11 h-6 rounded-full transition-colors relative ${
-                                    draft.typing_indicator ? "bg-[#ffe14d]" : "bg-white/10"
+                                    draft.typing_indicator ? "bg-primary" : "bg-muted"
                                 }`}
                             >
                                 <span
-                                    className={`absolute top-1 w-4 h-4 rounded-full bg-black transition-transform ${
+                                    className={`absolute top-1 w-4 h-4 rounded-full bg-background transition-transform ${
                                         draft.typing_indicator ? "translate-x-6" : "translate-x-1"
                                     }`}
                                 />
@@ -479,50 +479,50 @@ Never promise specific results or timelines.`}
                         onClick={runTest}
                         disabled={testing || !draft.has_api_key}
                         title={!draft.has_api_key ? "Save an API key first" : undefined}
-                        className="shrink-0 px-4 rounded-xl border border-white/10 text-neutral-300 hover:text-white hover:border-white/30 transition-colors disabled:opacity-40 flex items-center gap-2 text-sm"
+                        className="shrink-0 px-4 rounded-xl border border-border text-foreground hover:text-foreground hover:border-foreground/30 transition-colors disabled:opacity-40 flex items-center gap-2 text-sm"
                     >
                         {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
                         Test
                     </button>
                 </div>
-                <p className="text-[11px] text-neutral-600">
+                <p className="text-[11px] text-muted-foreground">
                     Uses your saved settings — save changes first. Nothing is sent to Instagram.
                 </p>
                 {testReply && (
-                    <div className="rounded-xl bg-[#ffe14d] text-black px-4 py-3 text-sm max-w-[85%]">{testReply}</div>
+                    <div className="rounded-xl bg-primary text-primary-foreground px-4 py-3 text-sm max-w-[85%]">{testReply}</div>
                 )}
-                {testError && <div className="text-xs text-red-400">{testError}</div>}
+                {testError && <div className="text-xs text-destructive">{testError}</div>}
             </div>
 
             {/* Save */}
             <div className="p-6 flex items-center justify-between gap-4">
                 <div className="text-xs">
                     {error ? (
-                        <span className="text-red-400">{error}</span>
+                        <span className="text-destructive">{error}</span>
                     ) : !draft.is_enabled && canEnable ? (
                         // Saving settings does not switch the agent on — say so, and offer the switch.
                         <span className="flex items-center gap-2 flex-wrap">
-                            <span className="text-neutral-500">
+                            <span className="text-muted-foreground">
                                 {saved ? "Saved, but the agent is still off." : "The agent is off — it won't reply yet."}
                             </span>
                             <button
                                 onClick={() => save({ is_enabled: true })}
                                 disabled={saving}
-                                className="text-[#ffe14d] underline underline-offset-2 hover:brightness-110 disabled:opacity-50"
+                                className="text-foreground underline underline-offset-2 hover:brightness-110 disabled:opacity-50"
                             >
                                 Turn it on
                             </button>
                         </span>
                     ) : saved ? (
-                        <span className="text-[#ffe14d]">Saved</span>
+                        <span className="text-foreground">Saved</span>
                     ) : (
-                        <span className="text-neutral-600">Changes apply to new messages right away.</span>
+                        <span className="text-muted-foreground">Changes apply to new messages right away.</span>
                     )}
                 </div>
                 <button
                     onClick={() => save()}
                     disabled={saving}
-                    className="px-5 h-9 rounded-full bg-[#ffe14d] hover:brightness-95 text-black font-mono-ui text-[11px] font-bold uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50"
+                    className="flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-[13px] font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
                     {saving ? "Saving…" : "Save"}
                 </button>

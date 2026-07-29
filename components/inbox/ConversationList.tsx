@@ -38,19 +38,19 @@ export function ConversationList({ userId, selectedId, onSelect }: ConversationL
     if (loading) {
         return (
             <div className="flex items-center justify-center h-full">
-                <Loader2 className="w-6 h-6 text-white/20 animate-spin" />
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
         )
     }
 
     return (
-        <div className="flex flex-col h-full border-r border-white/5 bg-black/20 w-full md:w-[350px]">
-            <div className="p-4 border-b border-white/5">
-                <h2 className="text-lg font-bold text-white mb-4">Inbox</h2>
+        <div className="flex h-full w-full flex-col md:w-[340px]">
+            <div className="p-4 border-b border-border">
+                <h2 className="mb-3 text-sm font-medium text-foreground">Inbox</h2>
                 <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                     <input
-                        className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm text-white focus:outline-none focus:border-[#ffe14d]/50 placeholder:text-muted-foreground/50 transition-all"
+                        className="w-full rounded-lg border border-border bg-background py-2 pl-9 pr-3 text-[13px] text-foreground transition-colors placeholder:text-muted-foreground focus:border-ring focus:outline-none"
                         placeholder="Search messages..."
                     />
                 </div>
@@ -67,28 +67,25 @@ export function ConversationList({ userId, selectedId, onSelect }: ConversationL
                             key={conv.id}
                             onClick={() => onSelect(conv.id, conv.recipient_username, conv.recipient_id.toString())}
                             className={cn(
-                                "p-3 rounded-lg flex items-center gap-3 cursor-pointer transition-colors border border-transparent",
+                                "flex cursor-pointer items-center gap-3 rounded-lg border border-transparent p-2.5 transition-colors",
                                 selectedId === conv.id
-                                    ? "bg-[#ffe14d]/[0.06] border-[#ffe14d]/20"
-                                    : "hover:bg-white/5 hover:border-white/5"
+                                    ? "border-border bg-muted"
+                                    : "hover:bg-muted/50"
                             )}
                         >
-                            <div className="w-12 h-12 rounded-full bg-white/[0.06] border border-white/10 flex items-center justify-center shrink-0">
-                                <UserCircle className="w-6 h-6 text-white/50" />
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border bg-background">
+                                <UserCircle className="h-5 w-5 text-muted-foreground" strokeWidth={1.6} />
                             </div>
                             <div className="flex-1 min-w-0 text-left">
                                 <div className="flex items-center justify-between mb-0.5">
-                                    <span className={cn(
-                                        "font-semibold text-sm truncate",
-                                        selectedId === conv.id ? "text-[#ffe14d]" : "text-white"
-                                    )}>
+                                    <span className="truncate text-[13px] font-medium text-foreground">
                                         {conv.recipient_username}
                                     </span>
-                                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                                    <span className="numeric whitespace-nowrap text-[11px] text-muted-foreground">
                                         {new Date(conv.last_message_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                                     </span>
                                 </div>
-                                <p className="text-xs text-muted-foreground truncate">
+                                <p className="truncate text-[13px] text-muted-foreground">
                                     Open to view conversation
                                 </p>
                             </div>

@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     }
 
     const TEST_USER_ID = "9999999999"
-    const TEST_USERNAME = "test_creator"
+    const TEST_USERNAME = "anuzz.joshi"
 
     const supabase = await getSupabaseServerClient()
 

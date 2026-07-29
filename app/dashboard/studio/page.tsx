@@ -1,35 +1,37 @@
 "use client"
 
+import { Loader2 } from "lucide-react"
 import { useInstagramSession } from "@/hooks/use-instagram-session"
 import { ContentStudio } from "@/components/dashboard/ContentStudio"
+import { PageHeader } from "@/components/layout/page-header"
 
 export default function StudioPage() {
     const { userId, isLoading } = useInstagramSession()
 
     if (isLoading) {
         return (
-            <div className="h-screen flex items-center justify-center bg-black">
-                <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+            <div className="flex min-h-[50vh] items-center justify-center">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
         )
     }
 
     if (!userId) {
-        return <div className="h-screen flex items-center justify-center bg-black text-neutral-500">Please log in</div>
+        return (
+            <div className="flex min-h-[50vh] items-center justify-center text-sm text-muted-foreground">
+                Please log in
+            </div>
+        )
     }
 
     return (
-        <div className="min-h-screen bg-black">
-            <div className="max-w-5xl mx-auto px-4 md:px-8 py-8 space-y-8">
-                <div>
-                    <p className="font-mono-ui text-[10px] uppercase tracking-[0.3em] text-neutral-600 mb-2">
-                        Strategy
-                    </p>
-                    <h1 className="font-serif-display text-4xl md:text-5xl text-white leading-none">Content Studio</h1>
-                </div>
+        <div className="mx-auto max-w-5xl space-y-8 p-6 md:p-8">
+            <PageHeader
+                title="Content Studio"
+                description="Plan, draft, and schedule content straight from your dashboard."
+            />
 
-                <ContentStudio userId={userId} />
-            </div>
+            <ContentStudio userId={userId} />
         </div>
     )
 }
