@@ -23,10 +23,85 @@ export interface ContentRequest {
   ideaCount?: number
 }
 
+/**
+ * The six hook archetypes, after Kane Kallaway's framework. Every hook that
+ * reliably stops a scroll is one of these positions — naming the position is
+ * what turns "write a good hook" into a repeatable instruction, and it is why
+ * ideas come back labelled rather than improvised.
+ */
+export const HOOK_ARCHETYPES = [
+  {
+    id: "fortuneteller",
+    label: "The Fortuneteller",
+    summary: "Curiosity & future-oriented",
+    goal: "Paint an optimistic future, or ask how the future changes because of some new thing.",
+    template: "This [new thing] is going to completely change the way [people] do [task]. Here's why…",
+    positioning: "Builds trust as the person who knows what is next in the space.",
+    when: "Something new just dropped, or the industry shifted.",
+  },
+  {
+    id: "experimenter",
+    label: "The Experimenter",
+    summary: "Experiment & hack-based",
+    goal: "Show how you solved a common viewer pain point by running a method or experiment yourself.",
+    template: "I did [thing] to get [result] in [area] — let me show you how.",
+    positioning: "Peer-to-peer: a fellow student, not a guru.",
+    when: "You are among the first to test something new.",
+  },
+  {
+    id: "teacher",
+    label: "The Teacher",
+    summary: "Educational & process-driven",
+    goal: "Break down how a result was achieved, via a case study of someone else's playbook.",
+    template: "[Person] achieved [result] using [unusual method] — let me show you.",
+    positioning: "Expert authority in the field.",
+    when: "You are dissecting someone else's success rather than your own.",
+  },
+  {
+    id: "magician",
+    label: "The Magician",
+    summary: "Direct command & visual",
+    goal: "Instant scroll-stop by pointing at something visually compelling on screen.",
+    template: "Look at [thing] right there — that is [explanation].",
+    positioning: "Works for anyone, whenever the visual is genuinely arresting.",
+    when: "You already have the banger visual, and it matches what you say over it.",
+  },
+  {
+    id: "investigator",
+    label: "The Investigator",
+    summary: "Insider & secret reveal",
+    goal: "Reveal a hidden truth or finding most people do not know.",
+    template: "I found a secret feature in [thing] that changes how you do [task].",
+    positioning: "The tapped-in insider for the category.",
+    when: "You genuinely have a finding that is not common knowledge.",
+  },
+  {
+    id: "contrarian",
+    label: "The Contrarian",
+    summary: "Combination & intrigue",
+    goal: "State a contrarian belief explicitly in the very first line.",
+    template: "Everyone thinks [X] won because of [Y], but that has nothing to do with it.",
+    positioning: "Known for strong opinions and a unique point of view.",
+    when: "You hold a take that genuinely challenges conventional wisdom.",
+  },
+] as const
+
+export type HookArchetypeId = (typeof HOOK_ARCHETYPES)[number]["id"]
+
+const ARCHETYPE_IDS = HOOK_ARCHETYPES.map((a) => a.id) as readonly string[]
+
+export function archetypeLabel(id?: string): string | undefined {
+  return HOOK_ARCHETYPES.find((a) => a.id === id)?.label
+}
+
 export interface ContentIdea {
   title: string
   format: string
   hook: string
+  /** Which of the six archetypes this hook is built on. */
+  hook_archetype?: HookArchetypeId
+  /** Which content pillar this idea belongs to — the guard against a one-note set. */
+  pillar?: string
   why_it_works?: string
   script: string[]
   caption?: string
@@ -45,6 +120,8 @@ export interface ContentAnalysis {
   growth_math?: string
   /** How the creator actually talks, observed from reel transcripts. */
   voice?: string
+  /** The distinct subject areas the ideas are spread across. */
+  pillars?: string[]
 }
 
 export interface ContentPlanResult {
@@ -78,10 +155,41 @@ When reel transcripts are provided, they are the creator's actual spoken words:
 - Compare transcripts of high performers against low performers and name the difference in how they opened, structured and closed.
 - Only reason about content you were actually shown. For posts with no transcript, say so rather than guessing what was said.
 
+HOOKS ARE THE WHOLE GAME. Nothing in the body of a video matters if the viewer leaves in the first five seconds, so every hook you write must be built deliberately on one of these six archetypes:
+
+${HOOK_ARCHETYPES.map(
+  (a, i) =>
+    `${i + 1}. ${a.label} — ${a.summary}\n` +
+    `   Goal: ${a.goal}\n` +
+    `   Shape: "${a.template}"\n` +
+    `   Positions the creator as: ${a.positioning}\n` +
+    `   Use when: ${a.when}\n` +
+    `   id: "${a.id}"`,
+).join("\n\n")}
+
+How to use them:
+- Pick the archetype that fits the specific idea and the creator's authority, then write the hook to that archetype's shape. Do not pick one at random and do not default to the same one every time.
+- Report your choice in the "hook_archetype" field using the exact id above. If a hook does not genuinely fit an archetype, rewrite the hook until it does.
+- Vary them across the set. Producing several ideas that all use the same archetype is a failure — the point of the set is a range of angles.
+- Match archetype to evidence. "The Experimenter" needs something they actually tested; "The Investigator" needs a genuine finding; "The Contrarian" needs a real opinion they hold. Never assign an archetype whose premise you had to invent.
+- Stacking is allowed and often strongest: open with The Magician ("look at this") for the scroll-stop, then pivot into another archetype for the substance. If you stack, report the archetype that carries the idea.
+
+SPREAD THE SET ACROSS DIFFERENT SUBJECTS. The most common failure is a set where every idea is really the same video: an account about AI chatbots gets ten ideas that are all "here is a thing an AI chatbot can do". That set is worthless — it reaches the same people repeatedly and teaches the audience nothing new. Avoid it as follows:
+
+- First derive 3 to 5 CONTENT PILLARS for this account: genuinely distinct subject areas that the SAME audience cares about. List them in "analysis.pillars".
+- Build pillars around the audience, not the product. Start from what the target viewer's day, job and frustrations look like, then ask which subjects they would stop scrolling for. The creator's own product or offer may occupy AT MOST ONE pillar.
+- Good pillars are far apart from each other. For an AI chatbot account aimed at small businesses, pillars like "the chatbot's features / what to say to a customer who is about to churn / what a solo owner should stop doing by hand / how competitors are quietly winning on speed" are distinct. Four flavours of "chatbot features" are not.
+- Assign every idea to exactly one pillar and report it in the idea's "pillar" field, worded identically to the entry in "analysis.pillars".
+- Distribute ideas across the pillars as evenly as the count allows. Never put more than half the ideas in one pillar. If you are asked for 3 or more ideas, at least 3 different pillars must appear.
+- No two ideas may share the same core subject. The same subject with a different hook is ONE idea, not two.
+- Vary who each idea is for: some for viewers who do not yet know they have the problem, some for viewers comparing solutions, some for viewers ready to act. Ideas aimed only at people already sold reach nobody new.
+- Before you answer, re-read your set. If any two ideas could be summarised by the same sentence, delete one and replace it from a pillar you have not used yet. Do this check properly — it is the difference between a usable week of content and ten versions of one video.
+
 Rules for the ideas you produce:
 - Every idea must be specific to THIS account and goal. No generic advice like "post more reels" or "engage with your audience".
-- Hooks must be the actual first line, written out, not a description of a hook.
+- Hooks must be the literal first line as spoken or shown on screen, not a description of a hook. Keep them short enough to land inside three seconds — roughly 12 words.
 - Scripts are beat-by-beat and shootable: what is on screen, what is said. Aim for 5-9 beats for a reel.
+- Beat 1 IS the hook, word for word. Then earn the hook: give the context, then the contrast or turn that the hook promised, then the payoff. Do not let a strong hook open a video that never delivers on it.
 - Captions are written in the creator's voice, ready to paste.
 - Never invent statistics, results, or claims about the creator that you were not told.
 
@@ -92,6 +200,7 @@ Respond with ONLY a JSON object matching this shape, and nothing else — no pro
     "scale": "where this account sits by size, what its reach-vs-followers numbers say, and which tactics that stage rules in or out",
     "growth_math": "the arithmetic from today's numbers to the stated goal, with the weekly rate it requires and an honest verdict on whether the current output gets there",
     "voice": "how they actually talk, drawn from the transcripts — omit this field entirely if no transcripts were provided",
+    "pillars": ["3-5 distinct subject areas the ideas are spread across"],
     "what_is_working": ["specific observation about their existing posts"],
     "gaps": ["specific thing missing that blocks the stated goal"],
     "positioning": "one paragraph on the angle they should own"
@@ -101,7 +210,9 @@ Respond with ONLY a JSON object matching this shape, and nothing else — no pro
       "title": "short internal name",
       "format": "reel | carousel | story | post",
       "hook": "the literal first line on screen or spoken",
-      "why_it_works": "one line tying it to the goal",
+      "hook_archetype": "${ARCHETYPE_IDS.join(" | ")}",
+      "pillar": "which pillar from analysis.pillars this belongs to, worded identically",
+      "why_it_works": "one line naming the archetype's mechanism and tying it to the goal",
       "script": ["beat 1", "beat 2", "beat 3"],
       "caption": "ready-to-paste caption",
       "hashtags": ["tag", "tag"],
@@ -331,6 +442,19 @@ export function extractJson(raw: string): any {
   throw new Error("Model returned truncated JSON")
 }
 
+/**
+ * Models answer with the label ("The Contrarian") as often as the id, so match
+ * on both rather than dropping a correct choice on a formatting technicality.
+ */
+function normalizeArchetype(value: any): HookArchetypeId | undefined {
+  if (!value) return undefined
+  const needle = String(value).toLowerCase().replace(/^the\s+/, "").trim()
+  const hit = HOOK_ARCHETYPES.find(
+    (a) => a.id === needle || a.label.toLowerCase().replace(/^the\s+/, "") === needle,
+  )
+  return hit?.id
+}
+
 function toStringArray(value: any): string[] {
   if (Array.isArray(value)) return value.map((v) => String(v)).filter(Boolean)
   if (typeof value === "string" && value.trim()) return [value.trim()]
@@ -345,6 +469,8 @@ export function normalizePlan(parsed: any): ContentPlanResult {
       title: String(idea?.title ?? "Untitled idea"),
       format: String(idea?.format ?? "reel").toLowerCase(),
       hook: String(idea?.hook ?? ""),
+      hook_archetype: normalizeArchetype(idea?.hook_archetype),
+      pillar: idea?.pillar ? String(idea.pillar).trim() : undefined,
       why_it_works: idea?.why_it_works ? String(idea.why_it_works) : undefined,
       script: toStringArray(idea?.script),
       caption: idea?.caption ? String(idea.caption) : undefined,
@@ -365,8 +491,40 @@ export function normalizePlan(parsed: any): ContentPlanResult {
       what_is_working: toStringArray(analysis.what_is_working),
       gaps: toStringArray(analysis.gaps),
       positioning: text(analysis.positioning),
+      // Fall back to the pillars the ideas actually claim, so the UI can still
+      // show the spread when the model omits the analysis-level list.
+      pillars: toStringArray(analysis.pillars).length
+        ? toStringArray(analysis.pillars)
+        : distinctPillars(ideas),
     },
     ideas,
+  }
+}
+
+function distinctPillars(ideas: ContentIdea[]): string[] {
+  const seen = new Map<string, string>()
+  for (const idea of ideas) {
+    const pillar = idea.pillar?.trim()
+    if (pillar && !seen.has(pillar.toLowerCase())) seen.set(pillar.toLowerCase(), pillar)
+  }
+  return [...seen.values()]
+}
+
+/**
+ * How concentrated the set is. The whole point of pillars is spread, so when a
+ * plan comes back one-note anyway the UI should say so rather than quietly
+ * present ten versions of the same video as a week of content.
+ */
+export function pillarSpread(ideas: ContentIdea[]): { pillars: number; largestShare: number } {
+  const counts = new Map<string, number>()
+  for (const idea of ideas) {
+    const key = (idea.pillar?.trim() || "unassigned").toLowerCase()
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  const largest = Math.max(0, ...counts.values())
+  return {
+    pillars: counts.size,
+    largestShare: ideas.length ? largest / ideas.length : 0,
   }
 }
 

@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useState } from "react"
 import {
     Loader2, Wand2, Copy, Check, Trash2, ChevronDown, Target, History, AlertTriangle, Eye, Film, Users, Mic,
+    LayoutGrid,
 } from "lucide-react"
+import { archetypeLabel, pillarSpread } from "@/lib/ai/content"
 import type { ContentIdea, ContentAnalysis, OwnPost } from "@/lib/ai/content"
 import type { AccountSnapshot } from "@/lib/instagram-account"
 
@@ -216,6 +218,64 @@ function AudienceCard({ account, transcriptsUsed }: { account: AccountSnapshot; 
     )
 }
 
+/**
+ * The topical spread of the set. Surfaced because a plan whose ideas all sit in
+ * one pillar is ten versions of the same video, and that is easy to miss when
+ * each idea reads fine on its own.
+ */
+function PillarSpread({ ideas, pillars }: { ideas: ContentIdea[]; pillars: string[] }) {
+    if (!ideas.length) return null
+
+    const { pillars: distinct, largestShare } = pillarSpread(ideas)
+    const named = pillars.length ? pillars : []
+    if (!named.length && distinct <= 1) return null
+
+    const counts = named.map(p => ({
+        name: p,
+        count: ideas.filter(i => i.pillar?.trim().toLowerCase() === p.trim().toLowerCase()).length,
+    }))
+
+    // Same thresholds the prompt is held to: 3+ ideas should span 3+ pillars,
+    // and no single pillar may hold more than half the set.
+    const tooNarrow = ideas.length >= 3 && (distinct < 3 || largestShare > 0.5)
+
+    return (
+        <div className="rounded-xl border border-border bg-card p-6 space-y-3">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+                <span className={`${label} flex items-center gap-2`}>
+                    <LayoutGrid className="w-3.5 h-3.5 text-muted-foreground" />
+                    Content pillars
+                </span>
+                <span className="text-[10px] text-muted-foreground">
+                    {distinct} across {ideas.length} idea{ideas.length === 1 ? "" : "s"}
+                </span>
+            </div>
+
+            {counts.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                    {counts.map(p => (
+                        <span
+                            key={p.name}
+                            className="rounded-lg border border-border bg-background/40 px-2.5 py-1 text-[11px] text-foreground"
+                        >
+                            {p.name}
+                            <span className="numeric ml-1.5 text-muted-foreground">{p.count}</span>
+                        </span>
+                    ))}
+                </div>
+            )}
+
+            {tooNarrow && (
+                <p className="text-[11px] text-muted-foreground flex items-start gap-1.5">
+                    <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+                    These ideas are bunched into too few subjects, so they will reach much the same people
+                    twice. Regenerate, or add the angles you actually want to the goal box.
+                </p>
+            )}
+        </div>
+    )
+}
+
 const FORMATS = ["reel", "carousel", "story", "post"]
 
 const label = "text-[13px] font-medium text-foreground"
@@ -241,8 +301,10 @@ function CopyButton({ text, className = "" }: { text: string; className?: string
 
 function IdeaCard({ idea, index }: { idea: ContentIdea; index: number }) {
     const [open, setOpen] = useState(index === 0)
+    const archetype = archetypeLabel(idea.hook_archetype)
 
     const fullText = [
+        archetype ? `ARCHETYPE: ${archetype}` : "",
         `HOOK: ${idea.hook}`,
         "",
         "SCRIPT:",
@@ -267,8 +329,19 @@ function IdeaCard({ idea, index }: { idea: ContentIdea; index: number }) {
                         <span className="rounded-md border border-border bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
                             {idea.format}
                         </span>
+                        {archetype && (
+                            <span
+                                title="Hook archetype this idea is built on"
+                                className="rounded-md border border-foreground/30 bg-background px-1.5 py-0.5 text-[11px] font-medium text-foreground"
+                            >
+                                {archetype}
+                            </span>
+                        )}
                         <span className="text-foreground font-medium text-sm">{idea.title}</span>
                     </div>
+                    {idea.pillar && (
+                        <p className="text-[11px] text-muted-foreground mt-1.5">{idea.pillar}</p>
+                    )}
                     <p className="text-sm text-muted-foreground mt-2 italic">&ldquo;{idea.hook}&rdquo;</p>
                 </div>
                 <ChevronDown className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
@@ -693,6 +766,8 @@ export function ContentStudio({ userId }: { userId: string }) {
                             </div>
                         </div>
                     )}
+
+                    <PillarSpread ideas={plan.ideas} pillars={plan.analysis?.pillars ?? []} />
 
                     <div className="space-y-3">
                         {plan.ideas.map((idea, i) => <IdeaCard key={i} idea={idea} index={i} />)}
