@@ -1,5 +1,23 @@
 const GRAPH = "https://graph.instagram.com/v24.0"
 
+/**
+ * Dry run: log what would be sent instead of sending it.
+ *
+ * Local development reached through a tunnel receives real webhook deliveries,
+ * so without this a laptop would DM real followers — and twice over, because
+ * production is processing the same events. Every outbound write in this file
+ * goes through `post()`, so this one switch covers DMs, comment replies,
+ * reactions and typing indicators.
+ *
+ * `npm run dev:tunnel` turns this on by default; set INSTAGRAM_DRY_RUN=false to
+ * deliberately send for real from a local server.
+ */
+const DRY_RUN = process.env.INSTAGRAM_DRY_RUN === "true"
+
+export function isDryRun(): boolean {
+  return DRY_RUN
+}
+
 export interface IGButton {
   type: "web_url" | "postback"
   title: string
@@ -26,6 +44,13 @@ export interface SendResult {
 }
 
 async function post(path: string, token: string, body: any): Promise<SendResult> {
+  if (DRY_RUN) {
+    // Reported as success so the calling code follows its normal path — the
+    // point is to exercise the logic, just without touching a real account.
+    console.log(`[ig-api] DRY RUN — not sent: ${path} ${JSON.stringify(body).slice(0, 400)}`)
+    return { ok: true, id: `dryrun_${Date.now()}` }
+  }
+
   try {
     const res = await fetch(`${GRAPH}/${path}?access_token=${encodeURIComponent(token)}`, {
       method: "POST",

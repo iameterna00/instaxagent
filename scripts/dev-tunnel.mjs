@@ -81,7 +81,7 @@ const red = paint(31)
 const green = paint(32)
 const yellow = paint(33)
 
-function panel(publicUrl, stable) {
+function panel(publicUrl, stable, dryRun) {
   const verifyToken = env.INSTAGRAM_WEBHOOK_VERIFY_TOKEN
   const rule = "─".repeat(74)
 
@@ -111,6 +111,23 @@ function panel(publicUrl, stable) {
         dim(" For a permanent hostname, see the named-tunnel section in SETUP.md.\n"),
     )
   }
+
+  // The single most dangerous thing about tunnelled local dev: this server can
+  // DM real followers, on top of whatever production already sent them.
+  if (dryRun) {
+    console.log(
+      ` ${bold("Outbound: DRY RUN")} — DMs and comment replies are logged, not sent.\n` +
+        dim("   Nothing this server does can reach a real follower.\n") +
+        dim("   To send for real: INSTAGRAM_DRY_RUN=false in .env.local\n"),
+    )
+  } else {
+    console.log(
+      red(` Outbound: LIVE — this local server WILL send real DMs and comment replies.\n`) +
+        yellow("   If production is also running, followers get replied to twice.\n") +
+        dim("   To make it harmless: INSTAGRAM_DRY_RUN=true in .env.local\n"),
+    )
+  }
+
   console.log(`${rule}\n`)
 }
 
@@ -252,9 +269,13 @@ if (!env.INSTAGRAM_WEBHOOK_VERIFY_TOKEN?.trim()) {
   )
 }
 
+// Safe by default. A tunnelled dev server receives the same real webhook
+// deliveries production does, so sending must be opted INTO, not out of.
+const dryRun = (env.INSTAGRAM_DRY_RUN ?? "true").trim().toLowerCase() !== "false"
+
 function launch(publicUrl, stable, tunnel) {
   pipeTunnelLogs(tunnel)
-  panel(publicUrl, stable)
+  panel(publicUrl, stable, dryRun)
 
   const redirectUri = `${publicUrl}/api/instagram/callback`
   const hostname = new URL(publicUrl).host
@@ -273,6 +294,7 @@ function launch(publicUrl, stable, tunnel) {
     // next.config.mjs reads this to allow the tunnel host through the dev
     // server's cross-origin check.
     DEV_TUNNEL_HOSTNAME: hostname,
+    INSTAGRAM_DRY_RUN: String(dryRun),
   })
 }
 

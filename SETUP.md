@@ -132,11 +132,47 @@ DEV_TUNNEL_HOSTNAME=dev.yourdomain.com
 
 `npm run dev:tunnel` now uses that hostname and writes it into `.env.local` as your redirect URI. Register `https://dev.yourdomain.com/api/instagram/callback` and `.../api/instagram/webhook` in Meta once.
 
+### Keeping production safe
+
+Tunnelled local dev points real Instagram traffic at your laptop. Three things can leak into production if you don't isolate them — in order of how much damage they do.
+
+**1. The webhook callback URL — one per Meta app.**
+
+Pointing your production app's webhook at your tunnel **silently stops production webhooks** until you point it back. Nothing errors; automations just quietly stop firing.
+
+The fix is a **second Meta app for development**. Your Instagram account can authorise both, and each app receives its own copy of every event — so production keeps working untouched while your tunnel gets the same deliveries. Create it at developers.facebook.com, add the Instagram product, and put its credentials in `.env.local`:
+
+```env
+NEXT_PUBLIC_INSTAGRAM_APP_ID=<dev app's Instagram app ID>
+INSTAGRAM_APP_ID=<same>
+INSTAGRAM_APP_SECRET=<dev app's Instagram app secret>
+INSTAGRAM_WEBHOOK_VERIFY_TOKEN=<any random string>
+```
+
+`.env.local` is loaded after `.env`, is gitignored, and is never deployed — so nothing in it can reach production.
+
+OAuth redirect URIs have no such problem: Meta accepts several per app, so localhost, tunnel and production can all stay registered at once.
+
+**2. Outbound sends — your laptop can DM real followers.**
+
+If both production and your local server process the same DM, the sender gets answered **twice**. `npm run dev:tunnel` therefore defaults to dry run: every DM, comment reply, reaction and typing indicator is logged instead of sent.
+
+```txt
+[ig-api] DRY RUN — not sent: me/messages {"recipient":{"id":"178..."},"message":{"text":"Hey! ..."}}
+```
+
+The startup panel states which mode you're in. To send for real from local, set `INSTAGRAM_DRY_RUN=false` in `.env.local` — and make sure production isn't also answering.
+
+**3. The database — dry run does not cover it.**
+
+Local dev uses whatever Supabase credentials it finds, and by default those are your production ones. Your laptop will then read and **write** production `conversations`, `messages`, AI pause state and access tokens.
+
+For real isolation, create a second Supabase project, run the same `schema.sql` plus `scripts/*.sql` against it, and override the three keys in `.env.local`. If you skip this, at least know that local runs are mutating live data.
+
 ### Notes
 
-- Meta allows several OAuth redirect URIs at once, so you can keep localhost, the tunnel, and production registered simultaneously.
-- Only one webhook callback URL exists per app. Pointing it at your tunnel means **production stops receiving webhooks** until you point it back. If that matters, use a second Meta app for development.
 - `next.config.mjs` allows `*.trycloudflare.com` through the dev server's cross-origin check. A custom hostname is allowed automatically by the script.
+- Transcription and content plans spend money on your own API keys regardless of dry run — that guard only covers Instagram calls.
 
 ---
 

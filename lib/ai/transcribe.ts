@@ -8,12 +8,47 @@ import { isReel, type OwnPost } from "@/lib/instagram-media"
 // and run speech-to-text over it. Results are cached in `media_transcripts`
 // keyed by media id — a reel is paid for exactly once.
 //
-// Claude and DeepSeek have no audio endpoint, so this always talks to OpenAI.
+// Claude and DeepSeek have no audio endpoint, so transcription always uses a
+// separate credential: either Groq or OpenAI, detected from the key itself.
 // ============================================================
 
 /** Whisper rejects anything over 25 MB. Stay under it. */
 const MAX_BYTES = 24 * 1024 * 1024
-const TRANSCRIBE_MODEL = "whisper-1"
+
+/**
+ * Groq serves Whisper behind an OpenAI-compatible audio endpoint, so both
+ * providers use the identical multipart request — only the base URL and the
+ * model name differ. Groq keys are prefixed `gsk_`, which is enough to route
+ * the request without asking the user to pick a provider.
+ */
+const AUDIO_PROVIDERS = {
+  openai: {
+    label: "OpenAI",
+    url: "https://api.openai.com/v1/audio/transcriptions",
+    model: "whisper-1",
+  },
+  groq: {
+    label: "Groq",
+    url: "https://api.groq.com/openai/v1/audio/transcriptions",
+    // Turbo is the cheapest and fastest Whisper on Groq and is more than
+    // accurate enough for judging hooks and pacing.
+    model: "whisper-large-v3-turbo",
+  },
+} as const
+
+export type AudioProvider = keyof typeof AUDIO_PROVIDERS
+
+export function audioProviderFor(apiKey: string): AudioProvider {
+  return apiKey.trim().startsWith("gsk_") ? "groq" : "openai"
+}
+
+/**
+ * Providers retire Whisper model ids from time to time. TRANSCRIPTION_MODEL
+ * overrides the default so a rename can be fixed from .env rather than here.
+ */
+function modelFor(provider: AudioProvider): string {
+  return process.env.TRANSCRIPTION_MODEL?.trim() || AUDIO_PROVIDERS[provider].model
+}
 
 /** How many reels a single generate is allowed to pay for. */
 export const DEFAULT_TRANSCRIBE_LIMIT = 8
@@ -40,10 +75,10 @@ export interface TranscribeSummary {
 }
 
 type Attempt =
-  | { ok: true; text: string; duration?: number }
+  | { ok: true; text: string; duration?: number; model: string }
   // `permanent` distinguishes "this video will never transcribe" (too big, no
   // audio, rejected) from a timeout worth retrying on the next generate.
-  | { ok: false; error: string; permanent: boolean }
+  | { ok: false; error: string; permanent: boolean; auth?: boolean }
 
 /**
  * Which key to use for audio. When the account's main provider is already
@@ -96,16 +131,19 @@ async function transcribeOne(apiKey: string, url: string): Promise<Attempt> {
   const downloaded = await downloadMedia(url)
   if ("error" in downloaded) return { ok: false, error: downloaded.error, permanent: downloaded.permanent }
 
+  const provider = AUDIO_PROVIDERS[audioProviderFor(apiKey)]
+  const model = modelFor(audioProviderFor(apiKey))
+
   const form = new FormData()
   form.append("file", downloaded.blob, "reel.mp4")
-  form.append("model", TRANSCRIBE_MODEL)
+  form.append("model", model)
   // verbose_json is the only response format that returns the audio duration,
   // which the planner uses to reason about pacing and target reel length.
   form.append("response_format", "verbose_json")
 
   let res: Response
   try {
-    res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    res = await fetch(provider.url, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}` },
       body: form,
@@ -119,8 +157,14 @@ async function transcribeOne(apiKey: string, url: string): Promise<Attempt> {
 
   if (!res.ok || json?.error) {
     const detail = json?.error?.message || `HTTP ${res.status}`
-    // 4xx is a bad key or an unusable file — retrying costs money for nothing.
-    return { ok: false, error: detail, permanent: res.status >= 400 && res.status < 500 }
+
+    // A rejected key says nothing about this reel — caching it as a permanent
+    // failure would blacklist the video forever, so a later working key could
+    // never transcribe it. Same for rate limits, which clear on their own.
+    const auth = res.status === 401 || res.status === 403
+    const permanent = res.status >= 400 && res.status < 500 && !auth && res.status !== 429
+
+    return { ok: false, error: `${provider.label}: ${detail}`, permanent, auth }
   }
 
   const text = String(json?.text ?? "").trim()
@@ -130,7 +174,13 @@ async function transcribeOne(apiKey: string, url: string): Promise<Attempt> {
     ok: true,
     text,
     duration: typeof json?.duration === "number" ? json.duration : undefined,
+    model,
   }
+}
+
+/** Matches the phrasing OpenAI and Groq use when they reject a credential. */
+function looksLikeAuthFailure(error: string): boolean {
+  return /api key|unauthorized|authentication|invalid_api_key|401|403/i.test(error)
 }
 
 async function loadCached(
@@ -155,7 +205,9 @@ async function loadCached(
 
   for (const row of data ?? []) {
     if (row.error) {
-      failed.add(String(row.media_id))
+      // Rows recorded before auth errors were classified correctly, or written
+      // against a key that has since been replaced, must not stay blacklisted.
+      if (!looksLikeAuthFailure(row.error)) failed.add(String(row.media_id))
       continue
     }
     if (!row.transcript) continue
@@ -173,7 +225,7 @@ async function saveTranscript(
   supabase: any,
   userId: number | string,
   mediaId: string,
-  result: { transcript?: string; duration?: number; error?: string },
+  result: { transcript?: string; duration?: number; error?: string; model?: string },
 ) {
   const { error } = await supabase.from("media_transcripts").upsert(
     {
@@ -181,7 +233,7 @@ async function saveTranscript(
       media_id: mediaId,
       transcript: result.transcript ?? "",
       duration_seconds: result.duration ?? null,
-      model: TRANSCRIBE_MODEL,
+      model: result.model ?? null,
       error: result.error ?? null,
     },
     { onConflict: "user_id,media_id" },
@@ -232,8 +284,8 @@ export async function collectTranscripts(
   if (!apiKey) {
     if (pending.length) {
       notes.push(
-        `${pending.length} reel${pending.length === 1 ? "" : "s"} not transcribed — add an OpenAI transcription key ` +
-          "in Automations → AI Agent to let the planner hear what you actually say.",
+        `${pending.length} reel${pending.length === 1 ? "" : "s"} not transcribed — add an OpenAI or Groq ` +
+          "transcription key in Automations → AI Agent to let the planner hear what you actually say.",
       )
     }
     return { transcripts, reelsTotal: reels.length, transcribedNow: 0, missing: reels.length - transcripts.size, notes }
@@ -248,18 +300,35 @@ export async function collectTranscripts(
       batch.map(async (post) => ({ post, attempt: await transcribeOne(apiKey, post.media_url!) })),
     )
 
+    let keyRejected: string | null = null
+
     for (const { post, attempt } of attempts) {
       if (attempt.ok) {
         transcripts.set(post.id!, { media_id: post.id!, text: attempt.text, duration_seconds: attempt.duration })
         transcribedNow++
-        await saveTranscript(supabase, userId, post.id!, { transcript: attempt.text, duration: attempt.duration })
+        await saveTranscript(supabase, userId, post.id!, {
+          transcript: attempt.text,
+          duration: attempt.duration,
+          model: attempt.model,
+        })
       } else {
         console.warn(`[transcribe] ${post.id} failed: ${attempt.error}`)
+        if (attempt.auth) keyRejected = attempt.error
         if (attempt.permanent) await saveTranscript(supabase, userId, post.id!, { error: attempt.error })
-        if (!notes.some((n) => n.includes("could not be transcribed"))) {
+        if (!attempt.auth && !notes.some((n) => n.includes("could not be transcribed"))) {
           notes.push(`Some reels could not be transcribed (${attempt.error}).`)
         }
       }
+    }
+
+    // A rejected key fails every remaining reel identically — stop rather than
+    // spending another 30 seconds proving it seven more times.
+    if (keyRejected) {
+      notes.push(
+        `Transcription key was rejected (${keyRejected}). Check the key under Automations → AI Agent — ` +
+          "Groq keys start with gsk_, OpenAI keys with sk-. Nothing was cached, so a valid key will retranscribe.",
+      )
+      break
     }
   }
 

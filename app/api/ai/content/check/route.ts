@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
     }
     if (!canTranscribe) {
       missing.push(
-        "No transcription key, so the planner cannot hear your reels — add an OpenAI key under Automations → AI Agent.",
+        "No transcription key, so the planner cannot hear your reels — add a Groq or OpenAI key under Automations → AI Agent.",
       )
     }
 

@@ -292,18 +292,30 @@ export function AiAgentPanel({ userId, onEnabledChange }: AiAgentPanelProps) {
                                 <span className={label}>Reel transcription key (optional)</span>
                                 <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
                                     Lets the Content Studio hear what you actually say on camera, so it can critique your
-                                    real hooks and write in your voice. {provider.label} has no audio API, so this needs an
-                                    OpenAI key. Each reel is transcribed once and cached — roughly 1¢ per reel.
+                                    real hooks and write in your voice. {provider.label} has no audio API, so this needs a
+                                    separate <span className="text-foreground">Groq</span> or{" "}
+                                    <span className="text-foreground">OpenAI</span> key — whichever you paste is detected
+                                    automatically. Each reel is transcribed once and cached.
                                 </p>
                             </div>
-                            <a
-                                href="https://platform.openai.com/api-keys"
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-[10px] text-muted-foreground hover:text-foreground flex shrink-0 items-center gap-1 transition-colors"
-                            >
-                                Get a key <ExternalLink className="w-3 h-3" />
-                            </a>
+                            <div className="flex shrink-0 flex-col items-end gap-1">
+                                <a
+                                    href="https://console.groq.com/keys"
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                                >
+                                    Groq key <ExternalLink className="w-3 h-3" />
+                                </a>
+                                <a
+                                    href="https://platform.openai.com/api-keys"
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                                >
+                                    OpenAI key <ExternalLink className="w-3 h-3" />
+                                </a>
+                            </div>
                         </div>
                         <div className="relative mt-3">
                             <input
@@ -311,7 +323,9 @@ export function AiAgentPanel({ userId, onEnabledChange }: AiAgentPanelProps) {
                                 value={draft.transcription_api_key}
                                 onChange={(e) => patch({ transcription_api_key: e.target.value })}
                                 placeholder={
-                                    draft.has_transcription_key ? "•••••••••• (saved — type to replace)" : "sk-..."
+                                    draft.has_transcription_key
+                                        ? "•••••••••• (saved — type to replace)"
+                                        : "gsk_... (Groq) or sk-... (OpenAI)"
                                 }
                                 className={`${field} pr-11 font-mono text-xs`}
                                 autoComplete="off"
