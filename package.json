@@ -5,6 +5,7 @@
   "scripts": {
     "build": "next build",
     "dev": "next dev",
+    "dev:tunnel": "node scripts/dev-tunnel.mjs",
     "lint": "eslint .",
     "start": "next start"
   },

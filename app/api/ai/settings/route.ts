@@ -6,10 +6,16 @@ import type { AudienceMode } from "@/lib/types"
 
 const AUDIENCE_MODES: AudienceMode[] = ["all", "followers", "following", "mutuals"]
 
-/** The key itself never leaves the server — the UI only learns whether one is set. */
+/** Keys themselves never leave the server — the UI only learns whether one is set. */
 function toPublicSettings(settings: ReturnType<typeof normalizeSettings>) {
-  const { api_key, ...rest } = settings
-  return { ...rest, has_api_key: Boolean(api_key) }
+  const { api_key, transcription_api_key, ...rest } = settings
+  return {
+    ...rest,
+    has_api_key: Boolean(api_key),
+    // A key is effectively present when the main provider is OpenAI, since
+    // transcription falls back to that credential.
+    has_transcription_key: Boolean(transcription_api_key) || (settings.provider === "openai" && Boolean(api_key)),
+  }
 }
 
 /**
@@ -33,7 +39,8 @@ function describeFailure(error: any, verb: "load" | "save"): string {
   }
   // 42703 undefined_column / PGRST204 unknown column in cache
   if (error?.code === "42703" || error?.code === "PGRST204") {
-    return `Database is out of date (${message}) — run scripts/09-ai-agent.sql in your Supabase SQL editor.`
+    const script = /transcription/.test(message) ? "11-transcripts-and-audience.sql" : "09-ai-agent.sql"
+    return `Database is out of date (${message}) — run scripts/${script} in your Supabase SQL editor.`
   }
   return `Could not ${verb} AI settings: ${message}`
 }
@@ -124,6 +131,8 @@ export async function PUT(request: NextRequest) {
           ? current.reply_delay_seconds
           : clamp(body.reply_delay_seconds, 0, 8, current.reply_delay_seconds),
       typing_indicator: typeof body.typing_indicator === "boolean" ? body.typing_indicator : current.typing_indicator,
+      transcription_enabled:
+        typeof body.transcription_enabled === "boolean" ? body.transcription_enabled : current.transcription_enabled,
       updated_at: new Date().toISOString(),
     }
 
@@ -132,6 +141,13 @@ export async function PUT(request: NextRequest) {
       update.api_key = null
     } else if (typeof body.api_key === "string" && body.api_key.trim()) {
       update.api_key = body.api_key.trim()
+    }
+
+    // Same contract for the transcription key.
+    if (body.transcription_api_key === null) {
+      update.transcription_api_key = null
+    } else if (typeof body.transcription_api_key === "string" && body.transcription_api_key.trim()) {
+      update.transcription_api_key = body.transcription_api_key.trim()
     }
 
     // Turning the agent on without a key would silently do nothing.

@@ -75,6 +75,15 @@ export interface AiSettings {
   /** Never sent to the browser — the API returns `has_api_key` instead. */
   api_key?: string | null
   has_api_key?: boolean
+  /**
+   * OpenAI key used only for transcribing reels in the Content Studio. Claude
+   * and DeepSeek have no audio endpoint, so this is separate from `api_key` —
+   * except when `provider` is already "openai", where the main key is reused.
+   * Never sent to the browser; the API returns `has_transcription_key`.
+   */
+  transcription_api_key?: string | null
+  has_transcription_key?: boolean
+  transcription_enabled: boolean
   system_prompt: string
   audience_mode: AudienceMode
   blocklist: string[]

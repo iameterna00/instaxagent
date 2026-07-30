@@ -65,7 +65,78 @@ npm install
 npm run dev
 ```
 
-Visit http://localhost:3000. In development a **Dev Login** button appears, which fakes a session so you can click through the dashboard without connecting a real account. Real Instagram login won't fully work locally because webhooks can't reach `localhost`.
+Visit http://localhost:3000. In development a **Dev Login** button appears, which fakes a session so you can click through the dashboard without connecting a real account.
+
+Real Instagram login and webhooks will **not** work on plain `localhost` — Instagram only redirects to public HTTPS URLs, and Meta cannot deliver a webhook to your machine. For that, use the tunnel below.
+
+---
+
+## 3b. Local dev with a real Instagram connection — Cloudflare Tunnel
+
+This gives your dev server a public HTTPS hostname, so real OAuth logins and real webhook deliveries reach the code running on your machine, with breakpoints and hot reload intact.
+
+### Install cloudflared
+
+```bash
+winget install --id Cloudflare.cloudflared   # Windows
+brew install cloudflared                     # macOS
+# Linux: https://pkg.cloudflare.com/
+```
+
+### Run it
+
+Stop any `npm run dev` you already have running — Next allows only one dev server per project — then:
+
+```bash
+npm run dev:tunnel
+```
+
+It opens the tunnel, prints the public URL, hands that URL to the dev server as its OAuth redirect, and starts `next dev`. You'll see:
+
+```txt
+──────────────────────────────────────────────────────────────────
+ Tunnel is live  https://actors-kits-violin-dover.trycloudflare.com
+──────────────────────────────────────────────────────────────────
+
+ Paste these into developers.facebook.com → your app → Instagram:
+
+   Business login settings → OAuth redirect URIs
+     https://actors-kits-violin-dover.trycloudflare.com/api/instagram/callback
+
+   Webhooks → Callback URL
+     https://actors-kits-violin-dover.trycloudflare.com/api/instagram/webhook
+   Webhooks → Verify token
+     your_random_string
+```
+
+Paste both URLs into Meta, click **Verify and save** on the webhook, then open the tunnel URL in your browser and click **Connect Instagram**. Ctrl-C stops the tunnel and the dev server together.
+
+> `INSTAGRAM_WEBHOOK_VERIFY_TOKEN` must be set to some random string in `.env`, or Meta's **Verify and save** returns 403. The script warns you on startup if it is empty.
+
+### Stable hostname (recommended if you do this often)
+
+A quick tunnel gets a random hostname every run, so you have to re-paste both URLs into Meta each time. If you have a domain on Cloudflare, a **named tunnel** fixes the hostname permanently — register it with Meta once and never touch it again:
+
+```bash
+cloudflared tunnel login
+cloudflared tunnel create insta-dev
+cloudflared tunnel route dns insta-dev dev.yourdomain.com
+```
+
+Then in `.env`:
+
+```env
+CF_TUNNEL_NAME=insta-dev
+DEV_TUNNEL_HOSTNAME=dev.yourdomain.com
+```
+
+`npm run dev:tunnel` now uses that hostname and writes it into `.env.local` as your redirect URI. Register `https://dev.yourdomain.com/api/instagram/callback` and `.../api/instagram/webhook` in Meta once.
+
+### Notes
+
+- Meta allows several OAuth redirect URIs at once, so you can keep localhost, the tunnel, and production registered simultaneously.
+- Only one webhook callback URL exists per app. Pointing it at your tunnel means **production stops receiving webhooks** until you point it back. If that matters, use a second Meta app for development.
+- `next.config.mjs` allows `*.trycloudflare.com` through the dev server's cross-origin check. A custom hostname is allowed automatically by the script.
 
 ---
 
@@ -156,6 +227,10 @@ If nothing happens, check **Vercel → your project → Logs** and filter to `/a
 | Webhook 401s in the logs | Meta is signing with the parent app secret — set `META_APP_SECRET` to the value from Settings → Basic |
 | Login works, no automated replies | Webhook fields not subscribed, or the sending account isn't a tester while in Development mode |
 | Env var change did nothing | Vercel requires a redeploy after editing environment variables |
+| `dev:tunnel` says port already in use | A dev server is already running — stop it; Next allows one per project regardless of port |
+| Tunnel URL returns 502 | The dev server is still compiling, or it crashed — check the same terminal |
+| OAuth fails only through the tunnel | The tunnel hostname changed on restart; re-paste the redirect URI into Meta, or switch to a named tunnel |
+| Webhook verification returns 403 | `INSTAGRAM_WEBHOOK_VERIFY_TOKEN` is empty or does not match what you typed in Meta |
 
 ---
 

@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react"
 import {
-    Loader2, Wand2, Copy, Check, Trash2, ChevronDown, Target, History, AlertTriangle, Eye, Film,
+    Loader2, Wand2, Copy, Check, Trash2, ChevronDown, Target, History, AlertTriangle, Eye, Film, Users, Mic,
 } from "lucide-react"
 import type { ContentIdea, ContentAnalysis, OwnPost } from "@/lib/ai/content"
+import type { AccountSnapshot } from "@/lib/instagram-account"
 
 interface ContentPlan {
     id: string
@@ -19,6 +20,9 @@ interface ContentPlan {
     ideas: ContentIdea[]
     posts: OwnPost[] | null
     posts_analyzed: number
+    /** Follower count / reach / demographics the plan was reasoned against. */
+    account: AccountSnapshot | null
+    transcripts_used: number
     created_at: string
 }
 
@@ -108,6 +112,105 @@ function AnalyzedPosts({ posts }: { posts: OwnPost[] }) {
                 >
                     {expanded ? "Show less" : `Show all ${ranked.length}`}
                 </button>
+            )}
+        </div>
+    )
+}
+
+/**
+ * The audience the plan was sized against. Shown alongside the plan because
+ * "5k views" only means something next to a follower count.
+ */
+function AudienceCard({ account, transcriptsUsed }: { account: AccountSnapshot; transcriptsUsed: number }) {
+    const { profile, insights, demographics } = account
+    const followers = profile.followers_count
+
+    const stats: { label: string; value: string; hint?: string }[] = []
+    if (followers !== undefined) stats.push({ label: "Followers", value: compact(followers) })
+    if (insights?.reach !== undefined) {
+        stats.push({
+            label: `Reach · ${insights.window_days}d`,
+            value: compact(insights.reach),
+            hint: followers ? `${(insights.reach / followers).toFixed(1)}× followers` : undefined,
+        })
+    }
+    if (insights?.net_follows !== undefined) {
+        const perWeek = (insights.net_follows / (insights.window_days || 30)) * 7
+        stats.push({
+            label: "Net new followers",
+            value: `${insights.net_follows > 0 ? "+" : ""}${compact(insights.net_follows)}`,
+            hint: `≈${perWeek > 0 ? "+" : ""}${perWeek.toFixed(0)}/week`,
+        })
+    }
+    if (insights?.accounts_engaged !== undefined) {
+        stats.push({
+            label: "Accounts engaged",
+            value: compact(insights.accounts_engaged),
+            hint: insights.reach ? `${Math.round((insights.accounts_engaged / insights.reach) * 100)}% of reach` : undefined,
+        })
+    }
+
+    const topSlices = (slices?: { key: string; value: number }[]) => {
+        if (!slices?.length) return null
+        const total = slices.reduce((sum, s) => sum + s.value, 0) || 1
+        return slices.slice(0, 3).map(s => `${s.key} ${Math.round((s.value / total) * 100)}%`).join(" · ")
+    }
+
+    const rows = [
+        { label: "Age", value: topSlices(demographics?.age) },
+        { label: "Country", value: topSlices(demographics?.country) },
+        { label: "Gender", value: topSlices(demographics?.gender) },
+    ].filter(r => r.value)
+
+    // Notes alone are worth a card — they say what the API refused and how to fix it.
+    if (!stats.length && !rows.length && !transcriptsUsed && !account.notes?.length) return null
+
+    return (
+        <div className="rounded-xl border border-border bg-card p-6 space-y-4">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+                <span className={`${label} flex items-center gap-2`}>
+                    <Users className="w-3.5 h-3.5 text-muted-foreground" />
+                    The audience this plan was built for
+                </span>
+                {transcriptsUsed > 0 && (
+                    <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                        <Mic className="w-3 h-3" />
+                        {transcriptsUsed} reel{transcriptsUsed === 1 ? "" : "s"} transcribed
+                    </span>
+                )}
+            </div>
+
+            {stats.length > 0 && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {stats.map(stat => (
+                        <div key={stat.label} className="rounded-lg border border-border bg-background/40 px-3 py-2.5">
+                            <p className="text-[10px] text-muted-foreground">{stat.label}</p>
+                            <p className="numeric text-sm font-medium text-foreground mt-0.5">{stat.value}</p>
+                            {stat.hint && <p className="text-[10px] text-muted-foreground mt-0.5">{stat.hint}</p>}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {rows.length > 0 && (
+                <div className="space-y-1.5">
+                    {rows.map(row => (
+                        <p key={row.label} className="text-[11px] text-muted-foreground">
+                            <span className="text-foreground">{row.label}:</span> {row.value}
+                        </p>
+                    ))}
+                </div>
+            )}
+
+            {(account.notes?.length ?? 0) > 0 && (
+                <div className="space-y-1 border-t border-border pt-3">
+                    {account.notes.map((note, i) => (
+                        <p key={i} className="text-[11px] text-muted-foreground flex items-start gap-1.5">
+                            <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+                            {note}
+                        </p>
+                    ))}
+                </div>
             )}
         </div>
     )
@@ -243,7 +346,14 @@ export function ContentStudio({ userId }: { userId: string }) {
     const [generating, setGenerating] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [checking, setChecking] = useState(false)
-    const [check, setCheck] = useState<{ ok: boolean; reason: string; sample?: { views?: number; reach?: number }; reelsFound?: number } | null>(null)
+    const [check, setCheck] = useState<{
+        ok: boolean
+        reason: string
+        sample?: { views?: number; reach?: number }
+        reelsFound?: number
+        followersCount?: number
+        canTranscribe?: boolean
+    } | null>(null)
     const [plan, setPlan] = useState<ContentPlan | null>(null)
     const [history, setHistory] = useState<ContentPlan[]>([])
     const [showHistory, setShowHistory] = useState(false)
@@ -292,7 +402,14 @@ export function ContentStudio({ userId }: { userId: string }) {
         try {
             const res = await fetch(`/api/ai/content/check?userId=${userId}`)
             const data = await res.json()
-            setCheck({ ok: Boolean(data.ok), reason: data.reason || data.error || "Check failed", sample: data.sample, reelsFound: data.reelsFound })
+            setCheck({
+                ok: Boolean(data.ok),
+                reason: data.reason || data.error || "Check failed",
+                sample: data.sample,
+                reelsFound: data.reelsFound,
+                followersCount: data.followersCount,
+                canTranscribe: data.canTranscribe,
+            })
         } catch {
             setCheck({ ok: false, reason: "Check failed — could not reach the server" })
         } finally {
@@ -317,7 +434,8 @@ export function ContentStudio({ userId }: { userId: string }) {
                     <div>
                         <h2 className="text-sm font-medium text-foreground">What are you trying to achieve?</h2>
                         <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-                            The studio reads your last 25 posts, then plans against this goal.
+                            The studio reads your last 25 posts, transcribes your reels, and sizes the plan against your
+                            follower count — not generic advice.
                         </p>
                     </div>
                 </div>
@@ -457,7 +575,7 @@ export function ContentStudio({ userId }: { userId: string }) {
                             : <AlertTriangle className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />}
                         <span>
                             {check.reason}
-                            {check.ok && check.sample && (
+                            {check.sample && (
                                 <span className="block text-muted-foreground mt-1">
                                     Sample from your account: {check.sample.views !== undefined && `${compact(check.sample.views)} views`}
                                     {check.sample.views !== undefined && check.sample.reach !== undefined && " · "}
@@ -465,6 +583,13 @@ export function ContentStudio({ userId }: { userId: string }) {
                                     {check.reelsFound !== undefined && ` · ${check.reelsFound} reel(s) in the last 3 posts`}
                                 </span>
                             )}
+                            <span className="block text-muted-foreground mt-1">
+                                {check.followersCount !== undefined
+                                    ? `${compact(check.followersCount)} followers visible`
+                                    : "Follower count not visible"}
+                                {" · "}
+                                {check.canTranscribe ? "transcription ready" : "transcription not set up"}
+                            </span>
                         </span>
                     </div>
                 )}
@@ -492,6 +617,10 @@ export function ContentStudio({ userId }: { userId: string }) {
             {/* Result */}
             {plan && (
                 <div className="space-y-6">
+                    {plan.account && (
+                        <AudienceCard account={plan.account} transcriptsUsed={plan.transcripts_used ?? 0} />
+                    )}
+
                     {plan.posts && plan.posts.length > 0 && <AnalyzedPosts posts={plan.posts} />}
 
                     {plan.analysis && (
@@ -499,13 +628,41 @@ export function ContentStudio({ userId }: { userId: string }) {
                             <div className="flex items-center justify-between gap-4 flex-wrap">
                                 <span className={label}>Read on your account</span>
                                 <span className="text-[10px] text-muted-foreground">
-                                    {plan.posts_analyzed} posts analysed · {plan.model}
+                                    {plan.posts_analyzed} posts analysed
+                                    {plan.transcripts_used > 0 && ` · ${plan.transcripts_used} transcribed`}
+                                    {" · "}{plan.model}
                                 </span>
                             </div>
 
                             {plan.analysis.niche && <p className="text-foreground text-sm font-medium">{plan.analysis.niche}</p>}
                             {plan.analysis.positioning && (
                                 <p className="text-sm text-foreground leading-relaxed">{plan.analysis.positioning}</p>
+                            )}
+
+                            {/* Follower-aware reasoning: where they are, and the maths to the goal. */}
+                            {(plan.analysis.scale || plan.analysis.growth_math || plan.analysis.voice) && (
+                                <div className="space-y-3 rounded-xl border border-border bg-background/40 p-4">
+                                    {plan.analysis.scale && (
+                                        <div>
+                                            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Where you are</span>
+                                            <p className="text-[13px] text-foreground leading-relaxed mt-1">{plan.analysis.scale}</p>
+                                        </div>
+                                    )}
+                                    {plan.analysis.growth_math && (
+                                        <div>
+                                            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">What the goal requires</span>
+                                            <p className="text-[13px] text-foreground leading-relaxed mt-1">{plan.analysis.growth_math}</p>
+                                        </div>
+                                    )}
+                                    {plan.analysis.voice && (
+                                        <div>
+                                            <span className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                                                <Mic className="w-3 h-3" /> How you actually talk
+                                            </span>
+                                            <p className="text-[13px] text-foreground leading-relaxed mt-1">{plan.analysis.voice}</p>
+                                        </div>
+                                    )}
+                                </div>
                             )}
 
                             <div className="grid sm:grid-cols-2 gap-5 pt-1">

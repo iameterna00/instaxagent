@@ -11,7 +11,10 @@ interface AiAgentPanelProps {
     onEnabledChange?: (enabled: boolean) => void
 }
 
-type Draft = Omit<AiSettings, "user_id" | "api_key"> & { api_key: string }
+type Draft = Omit<AiSettings, "user_id" | "api_key" | "transcription_api_key"> & {
+    api_key: string
+    transcription_api_key: string
+}
 
 const EMPTY_DRAFT: Draft = {
     is_enabled: false,
@@ -19,6 +22,9 @@ const EMPTY_DRAFT: Draft = {
     model: "claude-opus-5",
     api_key: "",
     has_api_key: false,
+    transcription_api_key: "",
+    has_transcription_key: false,
+    transcription_enabled: true,
     system_prompt: "",
     audience_mode: "all",
     blocklist: [],
@@ -49,6 +55,7 @@ export function AiAgentPanel({ userId, onEnabledChange }: AiAgentPanelProps) {
     const [error, setError] = useState<string | null>(null)
     const [saved, setSaved] = useState(false)
     const [showKey, setShowKey] = useState(false)
+    const [showTranscriptionKey, setShowTranscriptionKey] = useState(false)
     const [showAdvanced, setShowAdvanced] = useState(false)
 
     const [testInput, setTestInput] = useState("hey! do you have any openings this week?")
@@ -65,7 +72,7 @@ export function AiAgentPanel({ userId, onEnabledChange }: AiAgentPanelProps) {
             .then((res) => res.json())
             .then((data) => {
                 if (cancelled || data?.error) return
-                setDraft({ ...EMPTY_DRAFT, ...data, api_key: "" })
+                setDraft({ ...EMPTY_DRAFT, ...data, api_key: "", transcription_api_key: "" })
                 onEnabledChange?.(Boolean(data.is_enabled))
             })
             .catch(() => setError("Could not load AI settings"))
@@ -91,6 +98,7 @@ export function AiAgentPanel({ userId, onEnabledChange }: AiAgentPanelProps) {
                         ...next,
                         // An empty box means "leave the stored key alone".
                         api_key: next.api_key.trim() || undefined,
+                        transcription_api_key: next.transcription_api_key.trim() || undefined,
                     }),
                 })
                 const data = await res.json()
@@ -98,7 +106,7 @@ export function AiAgentPanel({ userId, onEnabledChange }: AiAgentPanelProps) {
                     setError(data?.error || "Could not save")
                     return false
                 }
-                setDraft({ ...EMPTY_DRAFT, ...data, api_key: "" })
+                setDraft({ ...EMPTY_DRAFT, ...data, api_key: "", transcription_api_key: "" })
                 onEnabledChange?.(Boolean(data.is_enabled))
                 setSaved(true)
                 setTimeout(() => setSaved(false), 2000)
@@ -275,6 +283,61 @@ export function AiAgentPanel({ userId, onEnabledChange }: AiAgentPanelProps) {
                         your own {provider.label} account.
                     </p>
                 </div>
+
+                {/* Transcription key — only needed when the main provider has no audio API. */}
+                {draft.provider !== "openai" && (
+                    <div className="rounded-lg border border-border bg-background/40 p-4">
+                        <div className="flex items-start justify-between gap-4">
+                            <div>
+                                <span className={label}>Reel transcription key (optional)</span>
+                                <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                                    Lets the Content Studio hear what you actually say on camera, so it can critique your
+                                    real hooks and write in your voice. {provider.label} has no audio API, so this needs an
+                                    OpenAI key. Each reel is transcribed once and cached — roughly 1¢ per reel.
+                                </p>
+                            </div>
+                            <a
+                                href="https://platform.openai.com/api-keys"
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[10px] text-muted-foreground hover:text-foreground flex shrink-0 items-center gap-1 transition-colors"
+                            >
+                                Get a key <ExternalLink className="w-3 h-3" />
+                            </a>
+                        </div>
+                        <div className="relative mt-3">
+                            <input
+                                type={showTranscriptionKey ? "text" : "password"}
+                                value={draft.transcription_api_key}
+                                onChange={(e) => patch({ transcription_api_key: e.target.value })}
+                                placeholder={
+                                    draft.has_transcription_key ? "•••••••••• (saved — type to replace)" : "sk-..."
+                                }
+                                className={`${field} pr-11 font-mono text-xs`}
+                                autoComplete="off"
+                                spellCheck={false}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowTranscriptionKey(!showTranscriptionKey)}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                                {showTranscriptionKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                        </div>
+                        {draft.has_transcription_key && (
+                            <label className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
+                                <input
+                                    type="checkbox"
+                                    checked={draft.transcription_enabled}
+                                    onChange={(e) => patch({ transcription_enabled: e.target.checked })}
+                                    className="accent-foreground"
+                                />
+                                Transcribe reels when generating a content plan
+                            </label>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Prompt */}
