@@ -122,6 +122,55 @@ function Bullets({ items, tone }: { items: string[]; tone: "up" | "down" }) {
     )
 }
 
+/**
+ * The account-level read, side by side. Rows pair up by index rather than by
+ * meaning — the two lists are independent, so a short one just leaves blanks
+ * rather than stretching a cell to match.
+ */
+function SummaryTable({ working, improve }: { working: string[]; improve: string[] }) {
+    const rows = Math.max(working.length, improve.length)
+    if (rows === 0) return null
+
+    const cell = "align-top py-2.5 text-[13px] leading-relaxed text-muted-foreground"
+
+    return (
+        <div className="overflow-x-auto">
+            <table className="w-full min-w-[480px] border-collapse text-left">
+                <thead>
+                    <tr className="border-b border-border">
+                        <th className={cn(EYEBROW, "w-1/2 border-r border-border py-2 pr-5 text-emerald-500")}>
+                            What&apos;s working
+                        </th>
+                        <th className={cn(EYEBROW, "w-1/2 py-2 pl-5 text-amber-500")}>What to improve</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {Array.from({ length: rows }, (_, i) => (
+                        <tr key={i} className="border-b border-border last:border-b-0">
+                            <td className={cn(cell, "border-r border-border pr-5")}>
+                                {working[i] && (
+                                    <span className="flex gap-2.5">
+                                        <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-emerald-500" />
+                                        <span>{working[i]}</span>
+                                    </span>
+                                )}
+                            </td>
+                            <td className={cn(cell, "pl-5")}>
+                                {improve[i] && (
+                                    <span className="flex gap-2.5">
+                                        <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-amber-500" />
+                                        <span>{improve[i]}</span>
+                                    </span>
+                                )}
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    )
+}
+
 function SummaryPanel({ summary }: { summary: AnalysisSummary }) {
     return (
         <div className="surface flex flex-col gap-4 p-5 md:p-6">
@@ -138,20 +187,7 @@ function SummaryPanel({ summary }: { summary: AnalysisSummary }) {
                 </p>
             )}
 
-            <div className="grid gap-6 sm:grid-cols-2">
-                {summary.what_is_working.length > 0 && (
-                    <div className="flex flex-col gap-2.5">
-                        <span className={cn(EYEBROW, "text-emerald-500")}>What&apos;s working</span>
-                        <Bullets items={summary.what_is_working} tone="up" />
-                    </div>
-                )}
-                {summary.what_to_improve.length > 0 && (
-                    <div className="flex flex-col gap-2.5">
-                        <span className={cn(EYEBROW, "text-amber-500")}>What to improve</span>
-                        <Bullets items={summary.what_to_improve} tone="down" />
-                    </div>
-                )}
-            </div>
+            <SummaryTable working={summary.what_is_working} improve={summary.what_to_improve} />
 
             {summary.next_post && (
                 <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/40 p-4 sm:flex-row sm:gap-4">

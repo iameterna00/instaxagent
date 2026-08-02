@@ -25,7 +25,7 @@ export default function AnalyticsPage() {
     }
 
     return (
-        <div className="mx-auto max-w-7xl space-y-6 p-6 md:p-8">
+        <div className="space-y-6 p-6 md:p-8">
             <PageHeader
                 title="Analytics"
                 description="What worked, what didn't, and what to post next."
