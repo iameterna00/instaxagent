@@ -182,7 +182,7 @@ function SummaryPanel({ summary }: { summary: AnalysisSummary }) {
             </div>
 
             {summary.headline && (
-                <p className="max-w-[62ch] text-pretty text-[17px] leading-relaxed tracking-tight text-foreground">
+                <p className="max-w-[85ch] text-pretty text-[17px] leading-relaxed tracking-tight text-foreground">
                     {summary.headline}
                 </p>
             )}
@@ -670,7 +670,13 @@ export function DeepAnalysis({ userId }: { userId: string }) {
                 />
             </div>
 
-            <div className="grid gap-3 lg:grid-cols-[1.5fr_1fr]">
+            {/*
+              * The score panel holds a fixed amount of content, so it gets a fixed
+              * width and the summary absorbs everything left over. A proportional
+              * split would keep widening the score card on large monitors while
+              * the summary — the part with the actual reading in it — stays put.
+              */}
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
                 {saved.summary && <SummaryPanel summary={saved.summary} />}
                 <ScorePanel posts={posts} />
             </div>
