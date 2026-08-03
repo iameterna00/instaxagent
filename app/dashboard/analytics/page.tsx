@@ -3,7 +3,6 @@
 import { Loader2 } from "lucide-react"
 import { useInstagramSession } from "@/hooks/use-instagram-session"
 import { DeepAnalysis } from "@/components/dashboard/DeepAnalysis"
-import { PageHeader } from "@/components/layout/page-header"
 
 export default function AnalyticsPage() {
     const { userId, isLoading } = useInstagramSession()
@@ -24,13 +23,10 @@ export default function AnalyticsPage() {
         )
     }
 
+    // The design carries its own header (title, subtitle, Export / Re-run), so
+    // PageHeader would duplicate it.
     return (
-        <div className="space-y-6 p-6 md:p-8">
-            <PageHeader
-                title="Analytics"
-                description="What worked, what didn't, and what to post next."
-            />
-
+        <div className="px-[34px] pb-[70px] pt-[30px]">
             <DeepAnalysis userId={userId} />
         </div>
     )

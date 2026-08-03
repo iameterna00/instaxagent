@@ -3,7 +3,6 @@
 import { Loader2 } from "lucide-react"
 import { useInstagramSession } from "@/hooks/use-instagram-session"
 import { ContentStudio } from "@/components/dashboard/ContentStudio"
-import { PageHeader } from "@/components/layout/page-header"
 
 export default function StudioPage() {
     const { userId, isLoading } = useInstagramSession()
@@ -25,12 +24,9 @@ export default function StudioPage() {
     }
 
     return (
-        <div className="mx-auto max-w-5xl space-y-8 p-6 md:p-8">
-            <PageHeader
-                title="Content Studio"
-                description="Plan, draft, and schedule content straight from your dashboard."
-            />
-
+        // The studio carries its own header — it sits on the same row as the
+        // plan badge and Copy all — and the two-column layout needs the width.
+        <div className="mx-auto max-w-7xl p-6 md:p-8">
             <ContentStudio userId={userId} />
         </div>
     )

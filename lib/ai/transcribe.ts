@@ -58,8 +58,92 @@ const CONCURRENCY = 3
 
 export interface Transcript {
   media_id: string
+  /**
+   * Either `[12.5] line` per segment, or — for rows cached before timestamps
+   * were kept — one flat paragraph. Read it through `spokenText`/
+   * `describeTranscript` rather than parsing it at the call site.
+   */
   text: string
   duration_seconds?: number
+}
+
+/**
+ * Whisper's verbose_json segments, flattened to `[seconds] text` lines.
+ *
+ * A reel lives or dies on its first three seconds, so the model has to see
+ * WHERE a line lands, not merely that it was said. The timestamps are stored
+ * inline in the same `transcript` column instead of a parallel structure:
+ * transcripts cached before this existed stay valid and simply carry no
+ * prefixes, so nothing has to be re-transcribed.
+ *
+ * `[0.0] ` costs ~7 characters per line, against ~45 for an SRT cue — the
+ * prompt budget is what rules SRT out here, not the parsing.
+ */
+function toTimedText(segments: unknown, fallback: string): string {
+  if (!Array.isArray(segments)) return fallback
+
+  const lines: string[] = []
+  for (const segment of segments) {
+    const text = String(segment?.text ?? "").trim()
+    if (!text) continue
+    const start = Number(segment?.start)
+    lines.push(Number.isFinite(start) ? `[${start.toFixed(1)}] ${text}` : text)
+  }
+
+  return lines.length ? lines.join("\n") : fallback
+}
+
+/** True when a transcript carries `[12.5]` marks rather than being one paragraph. */
+export function isTimed(text: string): boolean {
+  return /^\[\d+(\.\d+)?\]\s/m.test(text)
+}
+
+/** The spoken words alone. Timestamps must never be counted as speech. */
+export function spokenText(text: string): string {
+  return text.replace(/^\[\d+(\.\d+)?\]\s*/gm, "")
+}
+
+/**
+ * The TRANSCRIPT block as both prompts render it, so Deep Analysis and Content
+ * Studio always describe a reel identically.
+ */
+export function describeTranscript(
+  transcript: Transcript,
+  maxChars: number,
+  indent = "   ",
+): string {
+  const spoken = spokenText(transcript.text)
+  const words = spoken.split(/\s+/).filter(Boolean).length
+  const pace =
+    transcript.duration_seconds && transcript.duration_seconds > 0
+      ? `${Math.round(transcript.duration_seconds)}s, ${(words / transcript.duration_seconds).toFixed(1)} words/sec`
+      : `${words} words`
+
+  let body = transcript.text
+  let ellipsis = ""
+  if (body.length > maxChars) {
+    const cut = body.slice(0, maxChars)
+    // Cut on a line boundary — a transcript that ends mid-segment leaves a
+    // dangling timestamp the model would read as a real spoken moment.
+    const lastBreak = cut.lastIndexOf("\n")
+    body = lastBreak > maxChars / 2 ? cut.slice(0, lastBreak) : cut
+    ellipsis = " […]"
+  }
+
+  if (!isTimed(transcript.text)) {
+    return `${indent}TRANSCRIPT (${pace}): "${body}${ellipsis}"`
+  }
+
+  const timed = body
+    .split("\n")
+    .map((line) => `${indent}${line}`)
+    .join("\n")
+
+  return (
+    `${indent}TRANSCRIPT (${pace}) — each [seconds] mark is when that line is spoken, ` +
+    `so judge the hook by how late the first real line lands and the pacing by the gaps:\n` +
+    `${timed}${ellipsis}`
+  )
 }
 
 export interface TranscribeSummary {
@@ -172,7 +256,9 @@ async function transcribeOne(apiKey: string, url: string): Promise<Attempt> {
 
   return {
     ok: true,
-    text,
+    // Segments come back for free with verbose_json; keeping them as `[12.5]`
+    // prefixes is what lets the model critique hooks and pacing at all.
+    text: toTimedText(json?.segments, text),
     duration: typeof json?.duration === "number" ? json.duration : undefined,
     model,
   }

@@ -150,6 +150,20 @@
   letter-spacing: -0.02em;
 }
 
+/* ---- Deep Analysis type stack ----
+   The design ships its own fonts: Instrument Sans for copy, JetBrains Mono for
+   every metric and eyebrow. Scoped to the page rather than applied globally so
+   the rest of the dashboard keeps Inter. To adopt it app-wide instead, move the
+   font-family below onto --font-sans in the @theme block above. */
+.type-design {
+  font-family: var(--font-instrument-sans), Helvetica, Arial, sans-serif;
+}
+
+.mono {
+  font-family: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
 .surface {
   @apply bg-card border border-border rounded-xl;
 }

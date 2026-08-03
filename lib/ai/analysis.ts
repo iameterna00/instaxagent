@@ -1,7 +1,7 @@
 import type { AiSettings } from "@/lib/types"
 import type { AccountSnapshot } from "@/lib/instagram-account"
 import type { OwnPost } from "@/lib/instagram-media"
-import type { Transcript } from "./transcribe"
+import { describeTranscript, type Transcript } from "./transcribe"
 import { extractJson } from "./content"
 import { generateReply } from "./providers"
 
@@ -276,7 +276,9 @@ Respond with ONLY a JSON object matching this shape, and nothing else — no pro
 
 Return exactly one entry in "posts" for every post you were given, using the "index" number shown in the list.`
 
-const TRANSCRIPT_CHARS = 1200
+// Timestamps cost ~7 characters a line, so the cap is a little higher than it
+// was to keep the same amount of actual speech in the prompt.
+const TRANSCRIPT_CHARS = 1400
 const CAPTION_CHARS = 400
 
 /** The post list the model reasons over. Indexed, because verdicts come back by index. */
@@ -312,14 +314,7 @@ function describePosts(
     const transcript = post.id ? transcripts?.get(post.id) : undefined
     if (!transcript) return head
 
-    const words = transcript.text.split(/\s+/).filter(Boolean).length
-    const pace =
-      transcript.duration_seconds && transcript.duration_seconds > 0
-        ? `${Math.round(transcript.duration_seconds)}s, ${(words / transcript.duration_seconds).toFixed(1)} words/sec`
-        : `${words} words`
-    const truncated = transcript.text.length > TRANSCRIPT_CHARS ? " […]" : ""
-
-    return `${head}\n   TRANSCRIPT (${pace}): "${transcript.text.slice(0, TRANSCRIPT_CHARS)}${truncated}"`
+    return `${head}\n${describeTranscript(transcript, TRANSCRIPT_CHARS)}`
   })
 
   return lines.join("\n")
@@ -358,7 +353,7 @@ export function buildAnalysisPrompt(context: AnalysisContext): string {
   sections.push(
     "",
     transcribed
-      ? `${transcribed} of these posts ${transcribed === 1 ? "includes" : "include"} a word-for-word transcript. Use them: critique the real opening lines, the real structure and the real pacing. Posts with no TRANSCRIPT line were not transcribed — do not speculate about their spoken content.`
+      ? `${transcribed} of these posts ${transcribed === 1 ? "includes" : "include"} a word-for-word transcript. Use them: critique the real opening lines, the real structure and the real pacing. Where a transcript carries [seconds] marks you know exactly when each line was spoken — judge the hook by how long it takes the first real claim to arrive, and the pacing by where the gaps fall, not by the average alone. Transcripts cached before timestamps were kept have no marks; judge those on wording only. Posts with no TRANSCRIPT line were not transcribed — do not speculate about their spoken content.`
       : "No transcripts were available, so you have not heard any of this content. Judge captions, formats and numbers only, and do not claim to know how they deliver on camera.",
   )
 

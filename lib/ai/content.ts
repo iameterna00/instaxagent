@@ -1,7 +1,7 @@
 import type { AiSettings } from "@/lib/types"
 import type { AccountSnapshot, DemographicSlice } from "@/lib/instagram-account"
 import type { OwnPost } from "@/lib/instagram-media"
-import type { Transcript } from "./transcribe"
+import { describeTranscript, type Transcript } from "./transcribe"
 import { generateReply } from "./providers"
 
 // ============================================================
@@ -94,6 +94,16 @@ export function archetypeLabel(id?: string): string | undefined {
   return HOOK_ARCHETYPES.find((a) => a.id === id)?.label
 }
 
+/**
+ * One shootable beat. `t` is a timestamp for reels ("0:07") or a slide number
+ * for carousels ("3") — it is what lets the UI show a script as a timeline
+ * rather than a numbered list, and what makes payoff timing visible.
+ */
+export interface ScriptBeat {
+  t?: string
+  text: string
+}
+
 export interface ContentIdea {
   title: string
   format: string
@@ -102,24 +112,18 @@ export interface ContentIdea {
   hook_archetype?: HookArchetypeId
   /** Which content pillar this idea belongs to — the guard against a one-note set. */
   pillar?: string
+  /** 0-100: how well this idea fits the evidence from this account specifically. */
+  fit?: number
+  /** "0:32" for a reel, "6 slides" for a carousel. */
+  runtime?: string
   why_it_works?: string
-  script: string[]
+  script: ScriptBeat[]
   caption?: string
   hashtags?: string[]
   cta?: string
 }
 
 export interface ContentAnalysis {
-  niche?: string
-  what_is_working?: string[]
-  gaps?: string[]
-  positioning?: string
-  /** Where the account sits by size, and which tactics that stage rules in or out. */
-  scale?: string
-  /** The arithmetic between the current follower count and the stated goal. */
-  growth_math?: string
-  /** How the creator actually talks, observed from reel transcripts. */
-  voice?: string
   /** The distinct subject areas the ideas are spread across. */
   pillars?: string[]
 }
@@ -145,7 +149,7 @@ Judge their existing content honestly. If something is not working, say so plain
 
 Size the strategy to the account you were actually given:
 - Read every number against the follower count. 5,000 views on a 500-follower account is distribution to strangers and worth doubling down on; the same 5,000 views on a 50,000-follower account means the post barely left the existing audience.
-- Do the arithmetic between where they are now and the goal, and state it: how many net follows or conversions per week that implies, and whether their current output rate can get there. If the goal is not reachable at the current rate, say so and say what would have to change.
+- Do the arithmetic between where they are now and the goal — how many net follows or conversions per week it implies, and whether their current output rate gets there. Keep that working out to yourself: it decides how ambitious the ideas have to be, but it is not something you report back.
 - Match tactics to the stage. A small account needs reach and a repeatable format that strangers can find. A mid-size account needs to convert existing reach into follows and DMs. A large account needs offers and depth, not more top-of-funnel. Never prescribe tactics that only work at a size they are not at.
 - Write for the audience demographics you were given, not a generic viewer. If the followers skew to a specific age band or country, the references, examples and language must fit those people.
 
@@ -190,20 +194,16 @@ Rules for the ideas you produce:
 - Hooks must be the literal first line as spoken or shown on screen, not a description of a hook. Keep them short enough to land inside three seconds — roughly 12 words.
 - Scripts are beat-by-beat and shootable: what is on screen, what is said. Aim for 5-9 beats for a reel.
 - Beat 1 IS the hook, word for word. Then earn the hook: give the context, then the contrast or turn that the hook promised, then the payoff. Do not let a strong hook open a video that never delivers on it.
+- Every beat carries a "t". For reels and stories that is the timestamp it starts at, as "M:SS" — real timings that add up to the runtime, not evenly spaced filler. For carousels it is the slide number as a plain string. The payoff should land early; if your own timings show it arriving late, restructure the beats rather than reporting a late payoff.
+- "runtime" is the finished length: "0:32" for a reel, "6 slides" for a carousel.
+- "fit" is 0-100: how strongly THIS account's own evidence supports the idea working. Anchor it to what you were shown — a format and angle their numbers already reward scores high; an idea you believe in but which nothing in their posts supports scores in the 70s. Do not give every idea a similar score, and do not score above 90 without specific evidence you can point to in "why_it_works".
 - Captions are written in the creator's voice, ready to paste.
 - Never invent statistics, results, or claims about the creator that you were not told.
 
 Respond with ONLY a JSON object matching this shape, and nothing else — no prose, no markdown fences:
 {
   "analysis": {
-    "niche": "one line naming the niche as you actually see it",
-    "scale": "where this account sits by size, what its reach-vs-followers numbers say, and which tactics that stage rules in or out",
-    "growth_math": "the arithmetic from today's numbers to the stated goal, with the weekly rate it requires and an honest verdict on whether the current output gets there",
-    "voice": "how they actually talk, drawn from the transcripts — omit this field entirely if no transcripts were provided",
-    "pillars": ["3-5 distinct subject areas the ideas are spread across"],
-    "what_is_working": ["specific observation about their existing posts"],
-    "gaps": ["specific thing missing that blocks the stated goal"],
-    "positioning": "one paragraph on the angle they should own"
+    "pillars": ["3-5 distinct subject areas the ideas are spread across"]
   },
   "ideas": [
     {
@@ -212,8 +212,13 @@ Respond with ONLY a JSON object matching this shape, and nothing else — no pro
       "hook": "the literal first line on screen or spoken",
       "hook_archetype": "${ARCHETYPE_IDS.join(" | ")}",
       "pillar": "which pillar from analysis.pillars this belongs to, worded identically",
-      "why_it_works": "one line naming the archetype's mechanism and tying it to the goal",
-      "script": ["beat 1", "beat 2", "beat 3"],
+      "fit": 84,
+      "runtime": "0:32",
+      "why_it_works": "one line naming the archetype's mechanism, the evidence behind the fit score, and the tie to the goal",
+      "script": [
+        { "t": "0:00", "text": "beat 1 — the hook, word for word" },
+        { "t": "0:04", "text": "beat 2" }
+      ],
       "caption": "ready-to-paste caption",
       "hashtags": ["tag", "tag"],
       "cta": "the specific ask"
@@ -343,15 +348,7 @@ function describeOwnPosts(
     const transcript = post.id ? transcripts?.get(post.id) : undefined
     if (!transcript) return head
 
-    const words = transcript.text.split(/\s+/).filter(Boolean).length
-    const pace =
-      transcript.duration_seconds && transcript.duration_seconds > 0
-        ? `${Math.round(transcript.duration_seconds)}s, ${(words / transcript.duration_seconds).toFixed(1)} words/sec`
-        : `${words} words`
-    const body = transcript.text.slice(0, TRANSCRIPT_CHARS)
-    const truncated = transcript.text.length > TRANSCRIPT_CHARS ? " […]" : ""
-
-    return `${head}\n   TRANSCRIPT (${pace}): "${body}${truncated}"`
+    return `${head}\n${describeTranscript(transcript, TRANSCRIPT_CHARS)}`
   })
 
   const guidance = hasPerformanceData
@@ -360,7 +357,7 @@ function describeOwnPosts(
 
   const transcriptCount = posts.filter((p) => p.id && transcripts?.has(p.id)).length
   const transcriptNote = transcriptCount
-    ? `\n\n${transcriptCount} of these posts ${transcriptCount === 1 ? "includes" : "include"} a word-for-word transcript of what was said on camera. Use them: critique the real opening lines, the real structure and the real pacing, and match their vocabulary in everything you write. Posts with no TRANSCRIPT line were not transcribed — do not speculate about their spoken content.`
+    ? `\n\n${transcriptCount} of these posts ${transcriptCount === 1 ? "includes" : "include"} a word-for-word transcript of what was said on camera. Use them: critique the real opening lines, the real structure and the real pacing, and match their vocabulary in everything you write. Where a transcript carries [seconds] marks you know exactly when each line was spoken — use them to see how long their hooks take to land and how fast they cut, then write scripts that beat it. Transcripts cached before timestamps were kept have no marks. Posts with no TRANSCRIPT line were not transcribed — do not speculate about their spoken content.`
     : "\n\nNo transcripts were available, so you have not heard any of this content. Judge captions, formats and numbers only, and do not claim to know how they deliver on camera."
 
   return lines.join("\n") + guidance + transcriptNote
@@ -461,6 +458,33 @@ function toStringArray(value: any): string[] {
   return []
 }
 
+/**
+ * Beats arrive as `{t, text}` now, but plans saved before timings existed hold
+ * plain strings. Both have to render, so both parse — an untimed beat simply
+ * carries no `t` and the UI numbers it instead.
+ */
+export function normalizeBeats(value: any): ScriptBeat[] {
+  if (!Array.isArray(value)) {
+    return typeof value === "string" && value.trim() ? [{ text: value.trim() }] : []
+  }
+
+  return value
+    .map((beat: any): ScriptBeat => {
+      if (typeof beat === "string") return { text: beat }
+      const text = String(beat?.text ?? beat?.beat ?? "").trim()
+      const t = beat?.t ?? beat?.time ?? beat?.timestamp
+      return { t: t !== undefined && t !== null && String(t).trim() ? String(t).trim() : undefined, text }
+    })
+    .filter((beat) => beat.text.length > 0)
+}
+
+/** 0-100, or undefined when the model gave nothing usable. */
+function normalizeFit(value: any): number | undefined {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return undefined
+  return Math.max(0, Math.min(100, Math.round(n)))
+}
+
 export function normalizePlan(parsed: any): ContentPlanResult {
   const rawIdeas = Array.isArray(parsed?.ideas) ? parsed.ideas : []
 
@@ -471,8 +495,10 @@ export function normalizePlan(parsed: any): ContentPlanResult {
       hook: String(idea?.hook ?? ""),
       hook_archetype: normalizeArchetype(idea?.hook_archetype),
       pillar: idea?.pillar ? String(idea.pillar).trim() : undefined,
+      fit: normalizeFit(idea?.fit),
+      runtime: idea?.runtime ? String(idea.runtime).trim() : undefined,
       why_it_works: idea?.why_it_works ? String(idea.why_it_works) : undefined,
-      script: toStringArray(idea?.script),
+      script: normalizeBeats(idea?.script),
       caption: idea?.caption ? String(idea.caption) : undefined,
       hashtags: toStringArray(idea?.hashtags).map((t) => t.replace(/^#/, "")),
       cta: idea?.cta ? String(idea.cta) : undefined,
@@ -480,17 +506,9 @@ export function normalizePlan(parsed: any): ContentPlanResult {
     .filter((idea: ContentIdea) => idea.hook || idea.script.length)
 
   const analysis = parsed?.analysis ?? {}
-  const text = (value: any): string | undefined => (value ? String(value) : undefined)
 
   return {
     analysis: {
-      niche: text(analysis.niche),
-      scale: text(analysis.scale),
-      growth_math: text(analysis.growth_math),
-      voice: text(analysis.voice),
-      what_is_working: toStringArray(analysis.what_is_working),
-      gaps: toStringArray(analysis.gaps),
-      positioning: text(analysis.positioning),
       // Fall back to the pillars the ideas actually claim, so the UI can still
       // show the spread when the model omits the analysis-level list.
       pillars: toStringArray(analysis.pillars).length

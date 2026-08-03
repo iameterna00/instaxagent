@@ -124,7 +124,13 @@ export async function POST(request: NextRequest) {
         analysis: result.plan.analysis,
         ideas: result.plan.ideas,
         posts_analyzed: posts.length,
-        posts,
+        // Mark which posts the model could actually hear. Without this the
+        // evidence list can only guess, and "transcribed" would be decoration
+        // rather than a fact about this run.
+        posts: posts.map((post) => ({
+          ...post,
+          transcribed: Boolean(post.id && transcription?.transcripts.has(post.id)),
+        })),
         // Snapshot the audience the plan was reasoned against, plus any notes
         // about what the API refused, so an old plan stays interpretable.
         account: account
