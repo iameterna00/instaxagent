@@ -26,7 +26,7 @@ export default function StudioPage() {
     return (
         // The studio carries its own header — it sits on the same row as the
         // plan badge and Copy all — and the two-column layout needs the width.
-        <div className="mx-auto max-w-7xl p-6 md:p-8">
+        <div className="w-full p-6 md:p-8">
             <ContentStudio userId={userId} />
         </div>
     )
