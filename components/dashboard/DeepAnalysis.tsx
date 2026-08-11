@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
     Loader2, Sparkles, AlertTriangle, Search, ChevronDown, ChevronUp, Film, RefreshCw,
-    Download, Star,
+    Download, Star, Mic, Copy,
 } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -11,8 +11,19 @@ import {
     accountAverages, accountTotals, averageScore, band, compact, compareToAverage, engagementRate,
     formatLeaderboard, formatOf, scoreBands, BAND_LABEL,
 } from "@/lib/ai/analysis"
+import { isTimed, spokenText } from "@/lib/ai/transcribe"
 import type { AnalysisSummary, AnalyzedPost, Band, PostFormat } from "@/lib/ai/analysis"
 import type { AccountSnapshot } from "@/lib/instagram-account"
+
+/** A row of the transcript cache, as /api/ai/transcripts returns it. */
+interface CachedTranscript {
+    media_id: string
+    transcript: string
+    duration_seconds: number | null
+    model: string | null
+    error: string | null
+    created_at: string | null
+}
 
 interface SavedAnalysis {
     id: string
@@ -317,9 +328,116 @@ function SelectChip({ prefix, value, options, onChange }: {
     )
 }
 
-function PostRow({ post, averages, open, onToggle }: {
+/** `[12.5] line` → `0:12` + the line. Untimed transcripts keep an empty stamp. */
+function transcriptLines(text: string): { at: string; text: string }[] {
+    return text
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+            const timed = line.match(/^\[(\d+(?:\.\d+)?)\]\s*(.*)$/)
+            if (!timed) return { at: "", text: line }
+            const seconds = Number(timed[1])
+            const stamp = `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`
+            return { at: stamp, text: timed[2] }
+        })
+}
+
+/**
+ * The reel's own words, from the cached Whisper run the analysis was scored
+ * against. Collapsed by default — it is the longest thing in an expanded row,
+ * and most of the time the verdict above it is the answer.
+ */
+function TranscriptPanel({ transcript }: { transcript: CachedTranscript }) {
+    const [open, setOpen] = useState(false)
+
+    const lines = useMemo(() => transcriptLines(transcript.transcript), [transcript.transcript])
+    const words = useMemo(
+        () => spokenText(transcript.transcript).split(/\s+/).filter(Boolean).length,
+        [transcript.transcript],
+    )
+    const timed = isTimed(transcript.transcript)
+
+    // A cached failure is worth showing: it says why the model judged this reel
+    // on its caption alone, rather than leaving the gap unexplained.
+    if (transcript.error || !transcript.transcript.trim()) {
+        return (
+            <div className="flex items-start gap-2 rounded-[10px] border border-dashed border-border px-[15px] py-3 text-[12px] text-muted-foreground">
+                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                <span>Not transcribed — {transcript.error || "no speech was detected"}.</span>
+            </div>
+        )
+    }
+
+    const pace =
+        transcript.duration_seconds && transcript.duration_seconds > 0
+            ? `${Math.round(transcript.duration_seconds)}s · ${(words / transcript.duration_seconds).toFixed(1)} words/sec`
+            : `${words} words`
+
+    const copy = async () => {
+        try {
+            await navigator.clipboard.writeText(spokenText(transcript.transcript))
+            toast.success("Transcript copied")
+        } catch {
+            toast.error("Could not copy the transcript")
+        }
+    }
+
+    return (
+        <div className="overflow-hidden rounded-[10px] border border-border bg-muted/40">
+            <div className="flex items-center gap-2.5 px-[15px] py-2.5">
+                <button
+                    type="button"
+                    onClick={() => setOpen((v) => !v)}
+                    aria-expanded={open}
+                    className="flex flex-1 items-center gap-2.5 text-left"
+                >
+                    <Mic className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    <span className={cn(EYEBROW, "text-[9.5px] text-muted-foreground")}>Transcript</span>
+                    <span className="mono text-[10.5px] text-muted-foreground">{pace}</span>
+                    <span className="ml-auto flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                        {open ? "Hide" : "Show"}
+                        {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    </span>
+                </button>
+                {open && (
+                    <button
+                        type="button"
+                        onClick={copy}
+                        className="flex shrink-0 items-center gap-1.5 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                        <Copy className="h-3 w-3" />
+                        Copy
+                    </button>
+                )}
+            </div>
+
+            {open && (
+                <div className="max-h-[280px] overflow-y-auto border-t border-border px-[15px] py-3">
+                    {timed ? (
+                        <div className="flex flex-col gap-1.5">
+                            {lines.map((line, i) => (
+                                <div key={i} className="grid grid-cols-[40px_minmax(0,1fr)] gap-2.5">
+                                    <span className="mono pt-[3px] text-[10.5px] text-muted-foreground">{line.at}</span>
+                                    <span className="text-[13px] leading-[1.55] text-foreground">{line.text}</span>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="whitespace-pre-wrap text-[13px] leading-[1.6] text-foreground">
+                            {transcript.transcript}
+                        </p>
+                    )}
+                </div>
+            )}
+        </div>
+    )
+}
+
+function PostRow({ post, averages, transcript, open, onToggle }: {
     post: AnalyzedPost
     averages: Record<string, number>
+    transcript?: CachedTranscript
     open: boolean
     onToggle: () => void
 }) {
@@ -445,6 +563,8 @@ function PostRow({ post, averages, open, onToggle }: {
                                 </div>
                             )}
 
+                            {transcript && <TranscriptPanel transcript={transcript} />}
+
                             {post.permalink && (
                                 <a
                                     href={post.permalink}
@@ -493,6 +613,15 @@ function PostRow({ post, averages, open, onToggle }: {
                     </div>
                 </div>
             )}
+
+            {/* A post the model returned no verdict for still has its own words. */}
+            {open && !verdict && transcript && (
+                <div className="bg-muted/20 px-5 pb-5 xl:pl-20">
+                    <div className="rounded-xl border border-border bg-card px-5 py-[18px]">
+                        <TranscriptPanel transcript={transcript} />
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
@@ -503,6 +632,7 @@ const PRESET_KEY = "deep-analysis-preset"
 
 export function DeepAnalysis({ userId }: { userId: string }) {
     const [saved, setSaved] = useState<SavedAnalysis | null>(null)
+    const [transcripts, setTranscripts] = useState<Record<string, CachedTranscript>>({})
     const [loading, setLoading] = useState(true)
     const [running, setRunning] = useState(false)
 
@@ -526,6 +656,31 @@ export function DeepAnalysis({ userId }: { userId: string }) {
             .finally(() => !cancelled && setLoading(false))
         return () => { cancelled = true }
     }, [userId])
+
+    // Cached transcripts for the reels on screen. They live in their own table
+    // rather than on the analysis row, so they load as a second, optional pass:
+    // the page is fully usable whether or not this ever comes back.
+    useEffect(() => {
+        const ids = (saved?.posts ?? [])
+            .filter((post) => post.id && formatOf(post) === "REEL")
+            .map((post) => post.id!)
+
+        if (!ids.length) return
+
+        let cancelled = false
+        fetch(`/api/ai/transcripts?userId=${userId}&mediaIds=${encodeURIComponent(ids.join(","))}`)
+            .then((r) => r.json())
+            .then((data) => {
+                if (cancelled || !Array.isArray(data?.transcripts)) return
+                setTranscripts(
+                    Object.fromEntries(
+                        (data.transcripts as CachedTranscript[]).map((row) => [row.media_id, row]),
+                    ),
+                )
+            })
+            .catch(() => { /* no transcripts is a missing extra, not an error */ })
+        return () => { cancelled = true }
+    }, [userId, saved])
 
     // Restore the saved filter preset, if there is one.
     useEffect(() => {
@@ -847,6 +1002,7 @@ export function DeepAnalysis({ userId }: { userId: string }) {
                                 key={key}
                                 post={post}
                                 averages={averages}
+                                transcript={post.id ? transcripts[post.id] : undefined}
                                 open={open === key}
                                 onToggle={() => setOpen(open === key ? null : key)}
                             />
