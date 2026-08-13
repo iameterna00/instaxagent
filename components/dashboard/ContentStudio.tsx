@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
     Loader2, Wand2, Copy, Check, Trash2, AlertTriangle, Eye, RotateCcw, ChevronDown, ChevronUp,
+    Mic, PenLine,
 } from "lucide-react"
 import { archetypeLabel, pillarSpread } from "@/lib/ai/content"
 import type { ContentIdea, ContentAnalysis, OwnPost, ScriptBeat } from "@/lib/ai/content"
 import type { ScriptLine, ScriptScore, RewriteBeat, ScriptTone } from "@/lib/ai/script"
+import type { WriterStructure, WrittenScript } from "@/lib/ai/writer"
 import type { AccountSnapshot } from "@/lib/instagram-account"
 
 // ------------------------------------------------------------
@@ -845,6 +847,670 @@ function ScriptTab({ userId }: { userId: string }) {
 }
 
 // ------------------------------------------------------------
+// Script writer tab
+//
+// The transcript list below is not decoration: it is ordered best performing
+// first, and that is the exact order the prompt weights by. What the owner
+// reads here is what the model writes from, so the ranking is shown rather
+// than hidden behind the button.
+// ------------------------------------------------------------
+
+interface LibraryItem {
+    rank: number
+    media_id: string
+    title: string
+    permalink?: string
+    thumbnail_url?: string
+    timestamp?: string
+    views?: number
+    reach?: number
+    like_count?: number
+    comments_count?: number
+    transcript: string
+    duration_seconds?: number
+    words: number
+    pace?: number
+    error?: string
+    transcribed: boolean
+}
+
+interface GeneratedScript {
+    id: string
+    topic: string | null
+    format: string | null
+    model: string | null
+    structure: WriterStructure | null
+    script: WrittenScript | null
+    modeled_on: string[] | null
+    notes: string[] | null
+    transcripts_used: number
+    posts_analyzed: number
+    created_at: string
+}
+
+interface WriterLibrary {
+    library: LibraryItem[]
+    scripts: GeneratedScript[]
+    transcribed: number
+    reelsTotal: number
+    canTranscribe: boolean
+    connected: boolean
+}
+
+function mmss(seconds: number): string {
+    return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`
+}
+
+/**
+ * Transcripts are stored as `[12.5] line` per segment, or as one flat paragraph
+ * for rows cached before timestamps were kept. Both have to read well, so the
+ * mark is pulled into its own column when it's there and the line stands alone
+ * when it isn't.
+ */
+function transcriptLines(text: string): { t?: string; text: string }[] {
+    return text
+        .split("\n")
+        .map(line => {
+            const match = line.match(/^\[(\d+(?:\.\d+)?)\]\s*(.*)$/)
+            return match ? { t: mmss(Number(match[1])), text: match[2] } : { text: line }
+        })
+        .filter(line => line.text.trim().length > 0)
+}
+
+/**
+ * The generated script as one plain block. Kept here rather than imported from
+ * lib/ai/writer so the provider code that module pulls in never reaches the
+ * client bundle.
+ */
+function writtenScriptToText(script: WrittenScript): string {
+    return [
+        script.title,
+        script.runtime ? `RUNTIME: ${script.runtime}` : "",
+        "",
+        ...(script.beats ?? []).map((beat, i) => {
+            const label = beat.t ?? String(i + 1)
+            return beat.dir ? `${label}  ${beat.text}\n      (${beat.dir})` : `${label}  ${beat.text}`
+        }),
+        "",
+        script.caption ? `CAPTION:\n${script.caption}` : "",
+        script.cta ? `\nCTA: ${script.cta}` : "",
+        script.hashtags?.length ? `\n${script.hashtags.map(h => `#${h}`).join(" ")}` : "",
+    ].filter(Boolean).join("\n")
+}
+
+function TranscriptRow({ item, open, onToggle }: { item: LibraryItem; open: boolean; onToggle: () => void }) {
+    const metric = item.views ?? item.reach
+    const lines = useMemo(
+        () => (item.transcript ? transcriptLines(item.transcript) : []),
+        [item.transcript],
+    )
+
+    return (
+        <div className="border-b border-border last:border-b-0">
+            <button
+                onClick={onToggle}
+                disabled={!item.transcribed}
+                className="flex w-full items-center gap-4 px-5 py-3.5 text-left transition-colors enabled:hover:bg-muted/60 disabled:cursor-default"
+            >
+                <span className={`mono w-6 shrink-0 text-[12px] ${item.rank <= 3 ? "text-foreground" : "text-muted-foreground"}`}>
+                    {String(item.rank).padStart(2, "0")}
+                </span>
+
+                <div className="h-9 w-7 shrink-0 overflow-hidden rounded-[5px] border border-border bg-muted">
+                    {item.thumbnail_url && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={item.thumbnail_url} alt="" className="h-full w-full object-cover" loading="lazy" />
+                    )}
+                </div>
+
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span className="truncate text-[13.5px] text-foreground">{item.title}</span>
+                    <div className="flex flex-wrap items-center gap-2 text-[11.5px] text-muted-foreground">
+                        {item.rank <= 3 && item.transcribed && (
+                            <span className="mono rounded-md border border-emerald-500/30 bg-emerald-500/[0.08] px-1.5 py-0.5 text-[9.5px] uppercase text-emerald-500">
+                                Primary template
+                            </span>
+                        )}
+                        {item.timestamp && <span>{new Date(item.timestamp).toLocaleDateString()}</span>}
+                        {item.words > 0 && <><span className="opacity-40">·</span><span className="mono">{item.words} words</span></>}
+                        {item.duration_seconds && (
+                            <><span className="opacity-40">·</span><span className="mono">{Math.round(item.duration_seconds)}s</span></>
+                        )}
+                        {item.pace && (
+                            <><span className="opacity-40">·</span><span className="mono">{item.pace} w/s</span></>
+                        )}
+                    </div>
+                </div>
+
+                <div className="flex shrink-0 flex-col items-end gap-0.5">
+                    <span className="mono text-[13px] text-foreground">
+                        {metric !== undefined ? compact(metric) : "—"}
+                    </span>
+                    <span className={`${MICRO} text-muted-foreground`}>
+                        {item.views !== undefined ? "Views" : item.reach !== undefined ? "Reach" : "No data"}
+                    </span>
+                </div>
+
+                {item.transcribed ? (
+                    open
+                        ? <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        : <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                ) : (
+                    <span className="mono whitespace-nowrap rounded-[5px] border border-border px-1.5 py-0.5 text-[9.5px] uppercase text-amber-500">
+                        {item.error ? "Failed" : "Not transcribed"}
+                    </span>
+                )}
+            </button>
+
+            {open && item.transcribed && (
+                <div className="flex flex-col gap-2.5 bg-background/40 px-5 pb-5 pt-1 sm:pl-[74px]">
+                    <div className="flex items-center justify-between">
+                        <span className={`${MICRO} text-muted-foreground`}>
+                            Spoken word for word{item.pace ? ` · ${item.pace} words/sec` : ""}
+                        </span>
+                        <div className="flex items-center gap-3">
+                            {item.permalink && (
+                                <a
+                                    href={item.permalink}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-[11.5px] text-muted-foreground transition-colors hover:text-foreground"
+                                >
+                                    Open reel ↗
+                                </a>
+                            )}
+                            <CopyButton text={item.transcript} label="Copy transcript" />
+                        </div>
+                    </div>
+
+                    {lines.map((line, i) => (
+                        <div key={i} className="flex gap-3">
+                            <span className="mono w-10 shrink-0 pt-0.5 text-[11px] text-muted-foreground">
+                                {line.t ?? ""}
+                            </span>
+                            <span className="text-[13px] leading-relaxed text-foreground">{line.text}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {open && !item.transcribed && item.error && (
+                <div className="px-5 pb-4 text-[12px] text-muted-foreground sm:pl-[74px]">{item.error}</div>
+            )}
+        </div>
+    )
+}
+
+function TranscriptLibrary({ items, loading }: { items: LibraryItem[]; loading: boolean }) {
+    const [open, setOpen] = useState<string | null>(null)
+    const [limit, setLimit] = useState(10)
+
+    if (loading) {
+        return (
+            <div className={`${CARD} flex min-h-[140px] items-center justify-center gap-2 p-8`}>
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                <span className="text-[13px] text-muted-foreground">Reading your reels…</span>
+            </div>
+        )
+    }
+
+    if (!items.length) {
+        return (
+            <div className={`${CARD} flex min-h-[140px] items-center justify-center p-8 text-center`}>
+                <span className="max-w-md text-[13px] leading-relaxed text-muted-foreground">
+                    No reels came back from Instagram, so there is nothing to learn a format from.
+                    Connect Instagram and post a reel, then transcribe it here.
+                </span>
+            </div>
+        )
+    }
+
+    const shown = items.slice(0, limit)
+
+    return (
+        <div className={`${CARD} overflow-hidden`}>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/40 px-5 py-3.5">
+                <span className={EYEBROW}>Your transcripts · best performing first</span>
+                <span className="text-[12px] text-muted-foreground">
+                    The top three are weighted hardest when writing
+                </span>
+            </div>
+
+            {shown.map(item => (
+                <TranscriptRow
+                    key={item.media_id}
+                    item={item}
+                    open={open === item.media_id}
+                    onToggle={() => setOpen(open === item.media_id ? null : item.media_id)}
+                />
+            ))}
+
+            <div className="flex items-center justify-between px-5 py-3.5 text-[12.5px] text-muted-foreground">
+                <span>{shown.length} of {items.length} reels shown</span>
+                {limit < items.length && (
+                    <button onClick={() => setLimit(items.length)} className="text-foreground hover:underline">
+                        Show all ↓
+                    </button>
+                )}
+            </div>
+        </div>
+    )
+}
+
+function StructureCard({ structure }: { structure: WriterStructure }) {
+    const steps = structure.steps ?? []
+    const voice = structure.voice ?? []
+    if (!steps.length && !voice.length && !structure.summary) return null
+
+    return (
+        <div className={`${CARD} flex flex-col gap-4 p-5 sm:p-6`}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className={EYEBROW}>The format it copied</span>
+                {structure.pacing && (
+                    <span className="mono text-[11.5px] text-muted-foreground">{structure.pacing}</span>
+                )}
+            </div>
+
+            {structure.summary && (
+                <p className="max-w-[70ch] text-[14px] leading-relaxed text-foreground">{structure.summary}</p>
+            )}
+
+            {steps.map((step, i) => (
+                <div key={i} className="grid gap-3 border-t border-border pt-3 sm:grid-cols-[132px_minmax(0,1fr)]">
+                    <div className="flex flex-col gap-0.5">
+                        <span className="mono text-[11px] uppercase tracking-[0.08em] text-foreground">{step.label}</span>
+                        {step.t && <span className="mono text-[11px] text-muted-foreground">{step.t}</span>}
+                    </div>
+                    <div className="flex min-w-0 flex-col gap-1.5">
+                        <span className="text-[13.5px] leading-relaxed text-muted-foreground">{step.purpose}</span>
+                        {step.evidence && (
+                            <span className="border-l border-border pl-3 text-[12.5px] leading-relaxed text-muted-foreground/80">
+                                {step.evidence}
+                            </span>
+                        )}
+                    </div>
+                </div>
+            ))}
+
+            {voice.length > 0 && (
+                <div className="flex flex-col gap-2 border-t border-border pt-3.5">
+                    <span className={`${MICRO} text-muted-foreground`}>How you actually talk</span>
+                    {voice.map((rule, i) => (
+                        <div key={i} className="flex gap-2.5">
+                            <span className="pt-1.5 text-[8px] text-muted-foreground">●</span>
+                            <span className="text-[13px] leading-relaxed text-muted-foreground">{rule}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    )
+}
+
+function WrittenScriptCard({ entry }: { entry: GeneratedScript }) {
+    const script = entry.script
+    if (!script) return null
+
+    const beats = script.beats ?? []
+
+    return (
+        <div className="flex flex-col gap-4">
+            <div className={`${CARD} flex flex-col gap-4 p-5 sm:p-6`}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex flex-col gap-1">
+                        <span className={EYEBROW}>Your next script</span>
+                        {script.title && (
+                            <span className="text-[19px] font-semibold tracking-tight text-foreground">
+                                {script.title}
+                            </span>
+                        )}
+                        {script.topic && (
+                            <span className="text-[12.5px] text-muted-foreground">{script.topic}</span>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                        {script.runtime && (
+                            <span className="mono rounded-full border border-border bg-muted px-2.5 py-1.5 text-[10.5px] uppercase text-muted-foreground">
+                                {script.runtime}
+                            </span>
+                        )}
+                        <CopyButton text={writtenScriptToText(script)} label="Copy script" />
+                    </div>
+                </div>
+
+                {script.hook && (
+                    <div className="flex flex-col gap-1.5 rounded-xl border border-border bg-background/50 px-4 py-3.5">
+                        <span className={`${MICRO} text-muted-foreground`}>Hook · first line out of your mouth</span>
+                        <span className="text-[17px] font-semibold leading-snug text-foreground">“{script.hook}”</span>
+                    </div>
+                )}
+
+                {beats.map((beat, i) => (
+                    <div key={i} className="flex gap-3.5 border-t border-border pt-3">
+                        <span className="mono w-11 shrink-0 pt-0.5 text-[11.5px] text-muted-foreground">
+                            {beat.t ?? String(i + 1)}
+                        </span>
+                        <div className="w-px shrink-0 bg-border" />
+                        <div className="flex flex-col gap-1">
+                            <span className="text-[14px] leading-relaxed text-foreground">{beat.text}</span>
+                            {beat.dir && <span className="text-[12px] text-muted-foreground">{beat.dir}</span>}
+                        </div>
+                    </div>
+                ))}
+
+                {(script.caption || script.cta || script.hashtags?.length) && (
+                    <div className="grid gap-4 border-t border-border pt-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+                        {script.caption && (
+                            <div className="flex flex-col gap-2">
+                                <div className="flex items-center justify-between">
+                                    <span className={`${MICRO} text-muted-foreground`}>Caption</span>
+                                    <CopyButton text={script.caption} />
+                                </div>
+                                <p className="whitespace-pre-line text-[13px] leading-relaxed text-muted-foreground">
+                                    {script.caption}
+                                </p>
+                            </div>
+                        )}
+                        <div className="flex flex-col gap-3 lg:border-l lg:border-border lg:pl-6">
+                            {script.cta && (
+                                <div className="flex flex-col gap-1.5">
+                                    <span className={`${MICRO} text-muted-foreground`}>CTA</span>
+                                    <span className="text-[13px] leading-relaxed text-foreground">{script.cta}</span>
+                                </div>
+                            )}
+                            {script.hashtags?.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5">
+                                    {script.hashtags.map(tag => (
+                                        <span key={tag} className="mono rounded-md border border-border bg-muted px-2 py-1 text-[10.5px] text-muted-foreground">
+                                            #{tag}
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {entry.structure && <StructureCard structure={entry.structure} />}
+
+            {(entry.modeled_on?.length || entry.notes?.length) && (
+                <div className="grid gap-4 lg:grid-cols-2">
+                    {entry.modeled_on && entry.modeled_on.length > 0 && (
+                        <div className={`${CARD} flex flex-col gap-3 p-5 sm:p-6`}>
+                            <span className={`${MICRO} text-muted-foreground`}>Modelled on</span>
+                            {entry.modeled_on.map((item, i) => (
+                                <div key={i} className="flex gap-2.5">
+                                    <span className="mono pt-0.5 text-[10px] text-muted-foreground">{i + 1}</span>
+                                    <span className="text-[13px] leading-relaxed text-muted-foreground">{item}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    {entry.notes && entry.notes.length > 0 && (
+                        <div className={`${CARD} flex flex-col gap-3 p-5 sm:p-6`}>
+                            <span className={`${MICRO} text-amber-500`}>Worth knowing</span>
+                            {entry.notes.map((note, i) => (
+                                <div key={i} className="flex gap-2.5">
+                                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
+                                    <span className="text-[13px] leading-relaxed text-muted-foreground">{note}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            <span className="px-1 text-[11.5px] text-muted-foreground">
+                Written from {entry.transcripts_used} transcript{entry.transcripts_used === 1 ? "" : "s"} of your own reels
+                {entry.posts_analyzed > 0 && ` across ${entry.posts_analyzed} posts`}
+                {entry.model && ` · ${entry.model}`}
+                {" · "}{new Date(entry.created_at).toLocaleString()}
+            </span>
+        </div>
+    )
+}
+
+function WriterTab({ userId }: { userId: string }) {
+    const [topic, setTopic] = useState("")
+    const [format, setFormat] = useState("reel")
+    const [data, setData] = useState<WriterLibrary | null>(null)
+    const [loading, setLoading] = useState(true)
+    const [writing, setWriting] = useState(false)
+    const [transcribing, setTranscribing] = useState(false)
+    const [error, setError] = useState<string | null>(null)
+    const [note, setNote] = useState<string | null>(null)
+    const [current, setCurrent] = useState<GeneratedScript | null>(null)
+
+    const load = useCallback(async () => {
+        if (!userId) return
+        setLoading(true)
+        try {
+            const res = await fetch(`/api/ai/writer?userId=${userId}`)
+            const body = await res.json()
+            if (!res.ok) setError(body?.error || "Could not read your transcripts")
+            else {
+                setData(body)
+                // Show the last script on arrival rather than an empty panel.
+                setCurrent(existing => existing ?? body.scripts?.[0] ?? null)
+            }
+        } catch {
+            setError("Could not reach the server")
+        } finally {
+            setLoading(false)
+        }
+    }, [userId])
+
+    useEffect(() => { load() }, [load])
+
+    const write = async () => {
+        if (writing) return
+        setWriting(true)
+        setError(null)
+        setNote(null)
+        try {
+            const res = await fetch("/api/ai/writer", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ userId, topic, format }),
+            })
+            const body = await res.json()
+            if (!res.ok) setError(body?.error || "Could not write the script")
+            else {
+                setCurrent(body)
+                setData(prev => (prev ? { ...prev, scripts: [body, ...prev.scripts] } : prev))
+            }
+        } catch {
+            setError("Could not write the script — check your connection and try again")
+        } finally {
+            setWriting(false)
+        }
+    }
+
+    const transcribe = async () => {
+        if (transcribing) return
+        setTranscribing(true)
+        setError(null)
+        setNote(null)
+        try {
+            const res = await fetch("/api/ai/writer", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ userId, mode: "transcribe" }),
+            })
+            const body = await res.json()
+            if (!res.ok) setError(body?.error || "Transcription failed")
+            else {
+                setNote(
+                    body.transcribedNow
+                        ? `Transcribed ${body.transcribedNow} reel${body.transcribedNow === 1 ? "" : "s"}.` +
+                          (body.missing ? ` ${body.missing} still to go — run it again.` : "")
+                        : body.notes?.[0] || "Nothing new to transcribe.",
+                )
+                await load()
+            }
+        } catch {
+            setError("Transcription failed — check your connection and try again")
+        } finally {
+            setTranscribing(false)
+        }
+    }
+
+    const remove = async (id: string) => {
+        await fetch(`/api/ai/writer?id=${id}`, { method: "DELETE" })
+        setData(prev => (prev ? { ...prev, scripts: prev.scripts.filter(s => s.id !== id) } : prev))
+        setCurrent(prev => (prev?.id === id ? null : prev))
+    }
+
+    const library = data?.library ?? []
+    const transcribed = data?.transcribed ?? 0
+    const missing = Math.max(0, (data?.reelsTotal ?? 0) - transcribed)
+    const saved = data?.scripts ?? []
+
+    return (
+        <div className="flex flex-col gap-4">
+            <div className="grid items-start gap-4 lg:grid-cols-[400px_minmax(0,1fr)]">
+                {/* Controls */}
+                <div className="flex flex-col gap-3.5 lg:sticky lg:top-5">
+                    <div className={`${CARD} flex flex-col gap-4 p-5`}>
+                        <span className={EYEBROW}>Next topic</span>
+
+                        <textarea
+                            value={topic}
+                            onChange={e => setTopic(e.target.value)}
+                            rows={3}
+                            placeholder="Why most editors quit at 10K followers — leave blank and I'll pick a topic that fits what already works for you."
+                            className={`${FIELD} resize-y leading-relaxed`}
+                        />
+
+                        <div className="flex flex-wrap gap-2">
+                            {SCRIPT_FORMATS.map(f => (
+                                <button
+                                    key={f}
+                                    onClick={() => setFormat(f)}
+                                    className={`mono rounded-full border px-2.5 py-1.5 text-[10.5px] uppercase transition-colors ${
+                                        format === f
+                                            ? "border-foreground/40 bg-foreground text-background"
+                                            : "border-border bg-muted text-muted-foreground hover:text-foreground"
+                                    }`}
+                                >
+                                    {f}
+                                </button>
+                            ))}
+                        </div>
+
+                        <button
+                            onClick={write}
+                            disabled={writing}
+                            className="flex h-11 items-center justify-center gap-2 rounded-[10px] bg-primary text-[13.5px] font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
+                        >
+                            {writing ? <Loader2 className="h-4 w-4 animate-spin" /> : <PenLine className="h-4 w-4" />}
+                            {writing ? "Writing…" : "Generate my next script"}
+                        </button>
+
+                        {error && <span className="text-[12px] text-destructive">{error}</span>}
+                        {writing && (
+                            <span className="text-[11.5px] text-muted-foreground">
+                                Reading your transcripts, pulling out the format, then writing to it — usually 40–90 seconds.
+                            </span>
+                        )}
+
+                        <span className="text-[11.5px] leading-relaxed text-muted-foreground">
+                            The model doesn&apos;t invent a style. It reads the reels below in performance order,
+                            extracts the structure and delivery of your best ones, and refills that shape with the
+                            new topic.
+                        </span>
+                    </div>
+
+                    {/* Transcript coverage */}
+                    <div className={`${CARD} flex flex-col gap-3 p-5`}>
+                        <div className="flex items-center justify-between gap-3">
+                            <span className={EYEBROW}>Reference library</span>
+                            <span className="mono text-[11.5px] text-muted-foreground">
+                                {transcribed} / {data?.reelsTotal ?? 0}
+                            </span>
+                        </div>
+
+                        <p className="text-[12px] leading-relaxed text-muted-foreground">
+                            {transcribed === 0
+                                ? "Nothing transcribed yet — without transcripts the writer has never heard you speak and can only work from captions."
+                                : `${transcribed} of your reels are transcribed word for word. The more of your winners are in here, the closer the script sounds to you.`}
+                        </p>
+
+                        {missing > 0 && (
+                            <button
+                                onClick={transcribe}
+                                disabled={transcribing || !data?.canTranscribe}
+                                className="flex items-center justify-center gap-2 rounded-lg border border-border bg-background px-3.5 py-2.5 text-[12.5px] text-foreground transition-colors hover:bg-muted disabled:opacity-40"
+                            >
+                                {transcribing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mic className="h-3.5 w-3.5" />}
+                                {transcribing ? "Transcribing…" : `Transcribe ${Math.min(missing, 8)} more`}
+                            </button>
+                        )}
+
+                        {data && !data.canTranscribe && (
+                            <span className="text-[11.5px] leading-relaxed text-amber-500">
+                                No transcription key — add a Groq or OpenAI key under Automations → AI Agent.
+                            </span>
+                        )}
+                        {note && <span className="text-[11.5px] leading-relaxed text-muted-foreground">{note}</span>}
+                    </div>
+
+                    {/* Past scripts */}
+                    {saved.length > 0 && (
+                        <div className={`${CARD} overflow-hidden`}>
+                            <div className="border-b border-border bg-muted/40 px-5 py-3">
+                                <span className={EYEBROW}>Written so far</span>
+                            </div>
+                            {saved.slice(0, 8).map(item => (
+                                <div
+                                    key={item.id}
+                                    onClick={() => setCurrent(item)}
+                                    className={`flex cursor-pointer items-center gap-3 border-b border-border px-5 py-3 transition-colors last:border-b-0 hover:bg-muted/60 ${
+                                        current?.id === item.id ? "bg-muted/40" : ""
+                                    }`}
+                                >
+                                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                                        <span className="truncate text-[13px] text-foreground">
+                                            {item.script?.title || item.topic || "Untitled script"}
+                                        </span>
+                                        <span className="text-[11.5px] text-muted-foreground">
+                                            {new Date(item.created_at).toLocaleDateString()} · {item.transcripts_used} transcripts
+                                        </span>
+                                    </div>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); remove(item.id) }}
+                                        title="Delete"
+                                        className="text-muted-foreground transition-colors hover:text-destructive"
+                                    >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* Output */}
+                {current ? (
+                    <WrittenScriptCard entry={current} />
+                ) : (
+                    <div className={`${CARD} flex min-h-[220px] items-center justify-center p-8 text-center`}>
+                        <span className="max-w-sm text-[13px] leading-relaxed text-muted-foreground">
+                            Type a topic and generate. You&apos;ll get the script, plus the beat template and
+                            delivery rules it copied from your own best reels — so you can check it followed your
+                            format rather than a generic one.
+                        </span>
+                    </div>
+                )}
+            </div>
+
+            <TranscriptLibrary items={library} loading={loading && !data} />
+        </div>
+    )
+}
+
+// ------------------------------------------------------------
 // History tab
 // ------------------------------------------------------------
 
@@ -940,7 +1606,7 @@ function HistoryTab({
 // ------------------------------------------------------------
 
 const FORMATS = ["reel", "carousel", "story", "post"]
-type Tab = "generate" | "script" | "history"
+type Tab = "generate" | "writer" | "script" | "history"
 
 export function ContentStudio({ userId }: { userId: string }) {
     const [tab, setTab] = useState<Tab>("generate")
@@ -1065,6 +1731,7 @@ export function ContentStudio({ userId }: { userId: string }) {
             <div className="flex gap-1 self-start rounded-[10px] border border-border bg-card p-1">
                 {([
                     ["generate", "Generate ideas"],
+                    ["writer", "Script writer"],
                     ["script", "Script analysis"],
                     ["history", "History"],
                 ] as [Tab, string][]).map(([id, name]) => (
@@ -1232,6 +1899,8 @@ export function ContentStudio({ userId }: { userId: string }) {
                     </div>
                 </div>
             )}
+
+            {tab === "writer" && <WriterTab userId={userId} />}
 
             {tab === "script" && <ScriptTab userId={userId} />}
 
