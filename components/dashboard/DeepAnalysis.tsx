@@ -636,6 +636,15 @@ export function DeepAnalysis({ userId }: { userId: string }) {
     const [loading, setLoading] = useState(true)
     const [running, setRunning] = useState(false)
 
+    // Metrics-only refresh: the four headline figures and the table's numbers,
+    // without spending a model call. `stale` says the numbers have moved since
+    // the verdicts were written, which is what makes a re-run worth offering.
+    const [refreshing, setRefreshing] = useState(false)
+    const [refreshedAt, setRefreshedAt] = useState<Date | null>(null)
+    const [stale, setStale] = useState(false)
+    const [newPosts, setNewPosts] = useState(0)
+    const [autoRefreshed, setAutoRefreshed] = useState(false)
+
     const [search, setSearch] = useState("")
     const [format, setFormat] = useState<PostFormat | "ALL">("ALL")
     const [performance, setPerformance] = useState<PerformanceFilter>("all")
@@ -695,6 +704,50 @@ export function DeepAnalysis({ userId }: { userId: string }) {
         } catch { /* a corrupt preset should never block the page */ }
     }, [])
 
+    /**
+     * Pull today's views, reach, engagement rate and follower numbers onto the
+     * saved analysis. No AI runs — a silent pass fires once on load, and the
+     * Refresh button repeats it on demand.
+     */
+    const refreshMetrics = useCallback(async (silent = false) => {
+        setRefreshing(true)
+        try {
+            const res = await fetch("/api/ai/analysis", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ userId }),
+            })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error || "Could not refresh the metrics")
+
+            setSaved(data.analysis)
+            setRefreshedAt(new Date())
+            setNewPosts(data.new_posts ?? 0)
+            setStale(Boolean(data.changed) || (data.new_posts ?? 0) > 0)
+
+            if (!silent) {
+                toast.success(
+                    data.new_posts > 0
+                        ? `Metrics updated · ${data.new_posts} new post${data.new_posts === 1 ? "" : "s"} not analysed yet`
+                        : "Metrics updated",
+                )
+            }
+        } catch (e: any) {
+            // The auto-pass is an extra on top of a page that already renders,
+            // so it fails quietly; an explicit click deserves an answer.
+            if (!silent) toast.error(e.message || "Could not refresh the metrics")
+        } finally {
+            setRefreshing(false)
+        }
+    }, [userId])
+
+    // One silent refresh per visit, as soon as the saved analysis is on screen.
+    useEffect(() => {
+        if (loading || !saved || autoRefreshed) return
+        setAutoRefreshed(true)
+        refreshMetrics(true)
+    }, [loading, saved, autoRefreshed, refreshMetrics])
+
     const run = useCallback(async () => {
         setRunning(true)
         try {
@@ -707,6 +760,10 @@ export function DeepAnalysis({ userId }: { userId: string }) {
             if (!res.ok) throw new Error(data.error || "Analysis failed")
             setSaved(data)
             setOpen(null)
+            // The verdicts now match the numbers again.
+            setStale(false)
+            setNewPosts(0)
+            setRefreshedAt(new Date())
             toast.success(`Analysed ${data.posts_analyzed} posts`)
         } catch (e: any) {
             toast.error(e.message || "Analysis failed")
@@ -787,7 +844,13 @@ export function DeepAnalysis({ userId }: { userId: string }) {
                 </p>
             </div>
             {saved && (
-                <div className="flex items-center gap-2.5">
+                <div className="flex flex-wrap items-center gap-2.5">
+                    {refreshedAt && (
+                        <span className="mono text-[11px] text-muted-foreground">
+                            Metrics {refreshing ? "updating…" : `updated ${refreshedAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`}
+                        </span>
+                    )}
+
                     <button
                         onClick={exportCsv}
                         className="inline-flex items-center gap-2 rounded-[9px] border border-border bg-card px-3.5 py-2.5 text-[13px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -795,14 +858,46 @@ export function DeepAnalysis({ userId }: { userId: string }) {
                         <Download className="h-3.5 w-3.5" />
                         Export CSV
                     </button>
+
+                    {/* Numbers only — no model call, so it is cheap to press. */}
                     <button
-                        onClick={run}
-                        disabled={running}
-                        className="inline-flex items-center gap-2 rounded-[9px] bg-foreground px-4 py-2.5 text-[13px] font-semibold text-background transition-opacity hover:opacity-90 disabled:opacity-60"
+                        onClick={() => refreshMetrics()}
+                        disabled={refreshing || running}
+                        title="Refresh views, reach, engagement rate and followers"
+                        className="inline-flex items-center gap-2 rounded-[9px] border border-border bg-card px-3.5 py-2.5 text-[13px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60"
                     >
-                        {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                        {running ? "Analysing…" : "Re-run AI analysis"}
+                        <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
+                        {refreshing ? "Refreshing…" : "Refresh metrics"}
                     </button>
+
+                    <div className="group relative">
+                        <button
+                            onClick={run}
+                            disabled={running}
+                            className={cn(
+                                "inline-flex items-center gap-2 rounded-[9px] px-4 py-2.5 text-[13px] font-semibold transition-colors disabled:opacity-60",
+                                stale
+                                    ? "bg-emerald-500 text-white hover:bg-emerald-600"
+                                    : "bg-foreground text-background hover:opacity-90",
+                            )}
+                        >
+                            {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                            {running ? "Analysing…" : "Re-run AI analysis"}
+                            {stale && !running && (
+                                <span className="h-1.5 w-1.5 rounded-full bg-white/90" />
+                            )}
+                        </button>
+
+                        {!running && (
+                            <span className="pointer-events-none absolute right-0 top-[calc(100%+6px)] z-10 whitespace-nowrap rounded-[7px] border border-border bg-card px-2.5 py-1.5 text-[12px] text-foreground opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                                {stale
+                                    ? newPosts > 0
+                                        ? `Analyse new data · ${newPosts} new post${newPosts === 1 ? "" : "s"}`
+                                        : "Analyse new data"
+                                    : "Re-score every post with AI"}
+                            </span>
+                        )}
+                    </div>
                 </div>
             )}
         </div>
@@ -868,7 +963,12 @@ export function DeepAnalysis({ userId }: { userId: string }) {
                 </div>
             )}
 
-            <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
+            <div
+                className={cn(
+                    "grid gap-3.5 transition-opacity sm:grid-cols-2 xl:grid-cols-4",
+                    refreshing && "opacity-60",
+                )}
+            >
                 <StatCard label="Views" value={metric(totals.views)} note={`across ${totals.measured} measured posts`} />
                 <StatCard
                     label="Reach"

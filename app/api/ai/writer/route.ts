@@ -139,6 +139,20 @@ export async function GET(request: NextRequest) {
 
     const supabase = await getSupabaseServerClient()
 
+    // The History tab only wants the saved scripts. Building the library costs
+    // a media fetch plus 25 insights calls, so it is skipped for that.
+    if (request.nextUrl.searchParams.get("only") === "scripts") {
+      const { data, error } = await supabase
+        .from("generated_scripts")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(20)
+
+      if (error) throw error
+      return NextResponse.json({ scripts: data ?? [] })
+    }
+
     const [{ data: user }, settings, cached] = await Promise.all([
       supabase.from("users").select("username, access_token").eq("id", userId).single(),
       loadAiSettings(supabase, userId).catch(() => null),
@@ -166,7 +180,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       library: full,
       scripts: scripts ?? [],
-      transcribed: full.filter((item) => item.transcribed).length,
+      // Counted over the live reels only. Orphaned rows carry transcripts too,
+      // but including them here made the coverage read as complete and hid the
+      // Transcribe button while real reels were still missing.
+      transcribed: library.filter((item) => item.transcribed).length,
+      failed: library.filter((item) => !item.transcribed && item.error).length,
       reelsTotal: library.length,
       canTranscribe: Boolean(settings && transcriptionKeyFor(settings)),
       connected: Boolean(user?.access_token),
@@ -183,7 +201,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const { userId, topic, format, mode } = await request.json()
+    const { userId, topic, format, mode, mediaIds } = await request.json()
     if (!userId) return NextResponse.json({ error: "Missing userId" }, { status: 400 })
 
     const supabase = await getSupabaseServerClient()
@@ -226,10 +244,30 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      const summary = await collectTranscripts(supabase, userId, key, posts, DEFAULT_TRANSCRIBE_LIMIT)
+      // One or more specific reels, straight from the row the owner clicked.
+      const only = Array.isArray(mediaIds)
+        ? mediaIds.map((id: unknown) => String(id)).filter(Boolean)
+        : undefined
+
+      let summary = await collectTranscripts(supabase, userId, key, posts, {
+        limit: only?.length ? only.length : DEFAULT_TRANSCRIBE_LIMIT,
+        only,
+      })
+
+      // A click has to do work. If everything still missing is a reel an
+      // earlier run failed on, retry those rather than reporting "nothing to
+      // transcribe" at someone looking at a list of untranscribed reels.
+      if (!only?.length && summary.transcribedNow === 0 && summary.pending === 0 && summary.failed > 0) {
+        summary = await collectTranscripts(supabase, userId, key, posts, {
+          limit: DEFAULT_TRANSCRIBE_LIMIT,
+          retryFailed: true,
+        })
+      }
+
       return NextResponse.json({
         transcribedNow: summary.transcribedNow,
         missing: summary.missing,
+        failed: summary.failed,
         reelsTotal: summary.reelsTotal,
         notes: summary.notes,
       })

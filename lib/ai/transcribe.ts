@@ -155,7 +155,24 @@ export interface TranscribeSummary {
   transcribedNow: number
   /** Reels still without a transcript. */
   missing: number
+  /**
+   * Reels held back by a cached failure. They are skipped by default so a run
+   * doesn't keep paying for a video that will never transcribe — but the caller
+   * needs the count to know a click had nothing to do, and to offer a retry.
+   */
+  failed: number
+  /** Reels whose transcription would be attempted next, before this run. */
+  pending: number
   notes: string[]
+}
+
+export interface CollectOptions {
+  /** How many reels this run may pay for. */
+  limit?: number
+  /** Transcribe exactly these media ids — an explicit, per-reel request. */
+  only?: string[]
+  /** Re-attempt reels whose last run failed and was cached as permanent. */
+  retryFailed?: boolean
 }
 
 type Attempt =
@@ -336,21 +353,37 @@ export async function collectTranscripts(
   userId: number | string,
   apiKey: string | null,
   posts: OwnPost[],
-  limit = DEFAULT_TRANSCRIBE_LIMIT,
+  options: CollectOptions = {},
 ): Promise<TranscribeSummary> {
+  const { limit = DEFAULT_TRANSCRIBE_LIMIT, only, retryFailed = false } = options
   const notes: string[] = []
+  const wanted = only?.length ? new Set(only.map(String)) : null
+
+  const allReels = posts.filter((p) => isReel(p) && p.id)
 
   // Highest reach first — if we can only afford a handful, transcribe the ones
   // whose performance the planner most needs to explain.
-  const reels = posts
-    .filter((p) => isReel(p) && p.id && p.media_url)
+  const reels = allReels
+    .filter((p) => p.media_url)
     .sort((a, b) => (b.views ?? b.reach ?? 0) - (a.views ?? a.reach ?? 0))
+
+  // A reel Instagram returns without a video URL can never be downloaded, and
+  // silently dropping it is what makes a Transcribe click look broken.
+  const unreadable = allReels.length - reels.length
+  if (unreadable > 0) {
+    notes.push(
+      `${unreadable} reel${unreadable === 1 ? "" : "s"} came back from Instagram with no video URL, ` +
+        "so there is nothing to download and transcribe for them.",
+    )
+  }
 
   const empty: TranscribeSummary = {
     transcripts: new Map(),
     reelsTotal: reels.length,
     transcribedNow: 0,
     missing: reels.length,
+    failed: 0,
+    pending: 0,
     notes,
   }
 
@@ -365,7 +398,14 @@ export async function collectTranscripts(
     reels.map((r) => r.id!),
   )
 
-  const pending = reels.filter((r) => !transcripts.has(r.id!) && !failed.has(r.id!))
+  const failedCount = reels.filter((r) => failed.has(r.id!)).length
+
+  // An explicit per-reel request overrides the cached failure: the owner is
+  // looking straight at the row and asking for it to be tried again.
+  const pending = reels.filter((r) => {
+    if (wanted) return wanted.has(r.id!)
+    return !transcripts.has(r.id!) && (retryFailed || !failed.has(r.id!))
+  })
 
   if (!apiKey) {
     if (pending.length) {
@@ -374,7 +414,15 @@ export async function collectTranscripts(
           "transcription key in Automations → AI Agent to let the planner hear what you actually say.",
       )
     }
-    return { transcripts, reelsTotal: reels.length, transcribedNow: 0, missing: reels.length - transcripts.size, notes }
+    return {
+      transcripts,
+      reelsTotal: reels.length,
+      transcribedNow: 0,
+      missing: reels.length - transcripts.size,
+      failed: failedCount,
+      pending: pending.length,
+      notes,
+    }
   }
 
   const queue = pending.slice(0, Math.max(0, limit))
@@ -420,8 +468,26 @@ export async function collectTranscripts(
 
   const missing = reels.length - transcripts.size
   if (missing > 0 && pending.length > queue.length) {
-    notes.push(`${missing} older reel${missing === 1 ? "" : "s"} not transcribed yet — regenerate to cover more.`)
+    notes.push(`${missing} older reel${missing === 1 ? "" : "s"} not transcribed yet — run it again to cover more.`)
   }
 
-  return { transcripts, reelsTotal: reels.length, transcribedNow, missing, notes }
+  // Nothing was even attempted: every reel left over is one an earlier run
+  // already failed on. Saying so is the difference between a button that looks
+  // broken and one that has genuinely run out of work.
+  if (!queue.length && missing > 0 && failedCount > 0 && !retryFailed && !wanted) {
+    notes.push(
+      `${failedCount} reel${failedCount === 1 ? "" : "s"} failed to transcribe before and were skipped. ` +
+        "Use the Transcribe button on the reel itself to try one of them again.",
+    )
+  }
+
+  return {
+    transcripts,
+    reelsTotal: reels.length,
+    transcribedNow,
+    missing,
+    failed: failedCount,
+    pending: pending.length,
+    notes,
+  }
 }

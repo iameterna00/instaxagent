@@ -3,7 +3,7 @@ import { getSupabaseServerClient } from "@/lib/supabase-server"
 import { loadAiSettings } from "@/lib/ai/agent"
 import { generateDeepAnalysis } from "@/lib/ai/analysis"
 import { collectTranscripts, transcriptionKeyFor } from "@/lib/ai/transcribe"
-import { fetchAccountSnapshot } from "@/lib/instagram-account"
+import { fetchAccountSnapshot, type AccountSnapshot } from "@/lib/instagram-account"
 import { attachInsights, fetchOwnPosts } from "@/lib/instagram-media"
 
 export const maxDuration = 300 // scoring a whole period at high effort is slow
@@ -26,6 +26,111 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(data?.[0] ?? null)
   } catch (error: any) {
     console.error("[analysis] GET error:", error)
+    return NextResponse.json({ error: describeFailure(error) }, { status: 500 })
+  }
+}
+
+/** Metric fields Instagram re-reports for a post that is already analysed. */
+const LIVE_METRICS = ["views", "reach", "saved", "shares", "like_count", "comments_count"] as const
+
+/**
+ * Refresh the numbers only — views, reach, engagement rate and followers — on
+ * the latest saved analysis. No model call: the verdicts stay exactly as they
+ * were, only the metrics they sit next to move. Returns whether anything
+ * actually changed, so the UI can offer a full re-run when it did.
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    const { userId } = await request.json()
+    if (!userId) return NextResponse.json({ error: "Missing userId" }, { status: 400 })
+
+    const supabase = await getSupabaseServerClient()
+
+    const { data: row, error: readError } = await supabase
+      .from("post_analyses")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (readError) throw readError
+    if (!row) return NextResponse.json({ error: "No saved analysis to refresh yet." }, { status: 404 })
+
+    const { data: user } = await supabase
+      .from("users")
+      .select("access_token")
+      .eq("id", userId)
+      .single()
+
+    if (!user?.access_token) {
+      return NextResponse.json({ error: "Instagram not connected" }, { status: 401 })
+    }
+
+    const [live, account] = await Promise.all([
+      fetchOwnPosts(user.access_token),
+      fetchAccountSnapshot(user.access_token),
+    ])
+
+    const { granted } = await attachInsights(user.access_token, live)
+
+    const bySavedId = new Map(live.filter((p) => p.id).map((p) => [p.id!, p]))
+    const savedPosts: any[] = Array.isArray(row.posts) ? row.posts : []
+    const savedIds = new Set(savedPosts.map((p) => p?.id).filter(Boolean))
+
+    let changed = false
+    const posts = savedPosts.map((post) => {
+      const fresh = post?.id ? bySavedId.get(post.id) : undefined
+      if (!fresh) return post
+
+      const next = { ...post }
+      for (const key of LIVE_METRICS) {
+        const value = fresh[key]
+        if (typeof value === "number" && value !== post[key]) {
+          next[key] = value
+          changed = true
+        }
+      }
+      // Instagram's CDN URLs expire, so the thumbnails are worth re-pointing
+      // on the same pass that refreshes the numbers.
+      if (fresh.thumbnail_url) next.thumbnail_url = fresh.thumbnail_url
+      if (fresh.media_url) next.media_url = fresh.media_url
+      return next
+    })
+
+    // Posts published since the analysis ran. They are deliberately NOT added
+    // to the table — an unscored row would break the score column — but their
+    // count is what makes a full re-run worth offering.
+    const newPosts = live.filter((p) => p.id && !savedIds.has(p.id)).length
+
+    const priorAccount = row.account as AccountSnapshot | null
+    const mergedAccount = account
+      ? {
+          ...account,
+          notes: [
+            ...account.notes,
+            ...(priorAccount?.notes ?? []).filter((note) => !account.notes.includes(note)),
+          ],
+        }
+      : priorAccount
+
+    const { data, error } = await supabase
+      .from("post_analyses")
+      .update({
+        posts,
+        account: mergedAccount,
+        // A token that lost the scope still leaves the previously fetched
+        // numbers on screen, so the caption-only warning stays off.
+        has_insights: granted || row.has_insights,
+      })
+      .eq("id", row.id)
+      .select()
+      .single()
+
+    if (error) throw error
+    return NextResponse.json({ analysis: data, changed, new_posts: newPosts })
+  } catch (error: any) {
+    console.error("[analysis] PATCH error:", error)
     return NextResponse.json({ error: describeFailure(error) }, { status: 500 })
   }
 }

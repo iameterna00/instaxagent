@@ -892,6 +892,8 @@ interface WriterLibrary {
     library: LibraryItem[]
     scripts: GeneratedScript[]
     transcribed: number
+    /** Reels whose last transcription attempt failed and was cached. */
+    failed: number
     reelsTotal: number
     canTranscribe: boolean
     connected: boolean
@@ -918,6 +920,17 @@ function transcriptLines(text: string): { t?: string; text: string }[] {
 }
 
 /**
+ * The spoken script as plain paragraphs. Scripts saved before the writer went
+ * plain-text carry `t` timestamps and `dir` stage directions on each beat;
+ * those are dropped here so an old script reads the same as a new one.
+ */
+function scriptParagraphs(script: WrittenScript): string[] {
+    return (script.beats ?? [])
+        .map(beat => (beat.text ?? "").trim())
+        .filter(Boolean)
+}
+
+/**
  * The generated script as one plain block. Kept here rather than imported from
  * lib/ai/writer so the provider code that module pulls in never reaches the
  * client bundle.
@@ -925,12 +938,8 @@ function transcriptLines(text: string): { t?: string; text: string }[] {
 function writtenScriptToText(script: WrittenScript): string {
     return [
         script.title,
-        script.runtime ? `RUNTIME: ${script.runtime}` : "",
         "",
-        ...(script.beats ?? []).map((beat, i) => {
-            const label = beat.t ?? String(i + 1)
-            return beat.dir ? `${label}  ${beat.text}\n      (${beat.dir})` : `${label}  ${beat.text}`
-        }),
+        scriptParagraphs(script).join("\n\n"),
         "",
         script.caption ? `CAPTION:\n${script.caption}` : "",
         script.cta ? `\nCTA: ${script.cta}` : "",
@@ -938,69 +947,102 @@ function writtenScriptToText(script: WrittenScript): string {
     ].filter(Boolean).join("\n")
 }
 
-function TranscriptRow({ item, open, onToggle }: { item: LibraryItem; open: boolean; onToggle: () => void }) {
+function TranscriptRow({ item, open, onToggle, onTranscribe, busy, canTranscribe }: {
+    item: LibraryItem
+    open: boolean
+    onToggle: () => void
+    onTranscribe: (mediaId: string) => void
+    busy: boolean
+    canTranscribe: boolean
+}) {
     const metric = item.views ?? item.reach
     const lines = useMemo(
         () => (item.transcript ? transcriptLines(item.transcript) : []),
         [item.transcript],
     )
 
+    // A failed row can be opened too — otherwise the reason it failed is
+    // written into the panel that can never be expanded.
+    const expandable = item.transcribed || Boolean(item.error)
+
     return (
         <div className="border-b border-border last:border-b-0">
-            <button
-                onClick={onToggle}
-                disabled={!item.transcribed}
-                className="flex w-full items-center gap-4 px-5 py-3.5 text-left transition-colors enabled:hover:bg-muted/60 disabled:cursor-default"
-            >
-                <span className={`mono w-6 shrink-0 text-[12px] ${item.rank <= 3 ? "text-foreground" : "text-muted-foreground"}`}>
-                    {String(item.rank).padStart(2, "0")}
-                </span>
+            <div className="flex items-center">
+                <button
+                    onClick={onToggle}
+                    disabled={!expandable}
+                    className="flex min-w-0 flex-1 items-center gap-4 px-5 py-3.5 text-left transition-colors enabled:hover:bg-muted/60 disabled:cursor-default"
+                >
+                    <span className={`mono w-6 shrink-0 text-[12px] ${item.rank <= 3 ? "text-foreground" : "text-muted-foreground"}`}>
+                        {String(item.rank).padStart(2, "0")}
+                    </span>
 
-                <div className="h-9 w-7 shrink-0 overflow-hidden rounded-[5px] border border-border bg-muted">
-                    {item.thumbnail_url && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={item.thumbnail_url} alt="" className="h-full w-full object-cover" loading="lazy" />
-                    )}
-                </div>
-
-                <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <span className="truncate text-[13.5px] text-foreground">{item.title}</span>
-                    <div className="flex flex-wrap items-center gap-2 text-[11.5px] text-muted-foreground">
-                        {item.rank <= 3 && item.transcribed && (
-                            <span className="mono rounded-md border border-emerald-500/30 bg-emerald-500/[0.08] px-1.5 py-0.5 text-[9.5px] uppercase text-emerald-500">
-                                Primary template
-                            </span>
-                        )}
-                        {item.timestamp && <span>{new Date(item.timestamp).toLocaleDateString()}</span>}
-                        {item.words > 0 && <><span className="opacity-40">·</span><span className="mono">{item.words} words</span></>}
-                        {item.duration_seconds && (
-                            <><span className="opacity-40">·</span><span className="mono">{Math.round(item.duration_seconds)}s</span></>
-                        )}
-                        {item.pace && (
-                            <><span className="opacity-40">·</span><span className="mono">{item.pace} w/s</span></>
+                    <div className="h-9 w-7 shrink-0 overflow-hidden rounded-[5px] border border-border bg-muted">
+                        {item.thumbnail_url && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={item.thumbnail_url} alt="" className="h-full w-full object-cover" loading="lazy" />
                         )}
                     </div>
-                </div>
 
-                <div className="flex shrink-0 flex-col items-end gap-0.5">
-                    <span className="mono text-[13px] text-foreground">
-                        {metric !== undefined ? compact(metric) : "—"}
-                    </span>
-                    <span className={`${MICRO} text-muted-foreground`}>
-                        {item.views !== undefined ? "Views" : item.reach !== undefined ? "Reach" : "No data"}
-                    </span>
-                </div>
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                        <span className="truncate text-[13.5px] text-foreground">{item.title}</span>
+                        <div className="flex flex-wrap items-center gap-2 text-[11.5px] text-muted-foreground">
+                            {item.rank <= 3 && item.transcribed && (
+                                <span className="mono rounded-md border border-emerald-500/30 bg-emerald-500/[0.08] px-1.5 py-0.5 text-[9.5px] uppercase text-emerald-500">
+                                    Primary template
+                                </span>
+                            )}
+                            {item.timestamp && <span>{new Date(item.timestamp).toLocaleDateString()}</span>}
+                            {item.words > 0 && <><span className="opacity-40">·</span><span className="mono">{item.words} words</span></>}
+                            {item.duration_seconds && (
+                                <><span className="opacity-40">·</span><span className="mono">{Math.round(item.duration_seconds)}s</span></>
+                            )}
+                            {item.pace && (
+                                <><span className="opacity-40">·</span><span className="mono">{item.pace} w/s</span></>
+                            )}
+                        </div>
+                    </div>
 
-                {item.transcribed ? (
-                    open
-                        ? <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        : <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                ) : (
-                    <span className="mono whitespace-nowrap rounded-[5px] border border-border px-1.5 py-0.5 text-[9.5px] uppercase text-amber-500">
-                        {item.error ? "Failed" : "Not transcribed"}
-                    </span>
+                    <div className="flex shrink-0 flex-col items-end gap-0.5">
+                        <span className="mono text-[13px] text-foreground">
+                            {metric !== undefined ? compact(metric) : "—"}
+                        </span>
+                        <span className={`${MICRO} text-muted-foreground`}>
+                            {item.views !== undefined ? "Views" : item.reach !== undefined ? "Reach" : "No data"}
+                        </span>
+                    </div>
+
+                    {item.transcribed ? (
+                        open
+                            ? <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            : <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    ) : (
+                        <span className="mono whitespace-nowrap rounded-[5px] border border-border px-1.5 py-0.5 text-[9.5px] uppercase text-amber-500">
+                            {item.error ? "Failed" : "Not transcribed"}
+                        </span>
+                    )}
+                </button>
+
+                {/* Transcribe this one reel. It sits outside the row button
+                    because a button cannot be nested inside another button. */}
+                {!item.transcribed && (
+                    <button
+                        onClick={() => onTranscribe(item.media_id)}
+                        disabled={busy || !canTranscribe}
+                        title={
+                            canTranscribe
+                                ? item.error
+                                    ? "Try transcribing this reel again"
+                                    : "Transcribe this reel"
+                                : "Add a Groq or OpenAI transcription key under Automations → AI Agent"
+                        }
+                        className="mr-5 flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-[11.5px] text-foreground transition-colors hover:bg-muted disabled:opacity-40"
+                    >
+                        {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Mic className="h-3 w-3" />}
+                        {busy ? "Transcribing…" : item.error ? "Retry" : "Transcribe"}
+                    </button>
                 )}
-            </button>
+            </div>
 
             {open && item.transcribed && (
                 <div className="flex flex-col gap-2.5 bg-background/40 px-5 pb-5 pt-1 sm:pl-[74px]">
@@ -1041,7 +1083,13 @@ function TranscriptRow({ item, open, onToggle }: { item: LibraryItem; open: bool
     )
 }
 
-function TranscriptLibrary({ items, loading }: { items: LibraryItem[]; loading: boolean }) {
+function TranscriptLibrary({ items, loading, onTranscribe, busyId, canTranscribe }: {
+    items: LibraryItem[]
+    loading: boolean
+    onTranscribe: (mediaId: string) => void
+    busyId: string | null
+    canTranscribe: boolean
+}) {
     const [open, setOpen] = useState<string | null>(null)
     const [limit, setLimit] = useState(10)
 
@@ -1082,6 +1130,9 @@ function TranscriptLibrary({ items, loading }: { items: LibraryItem[]; loading: 
                     item={item}
                     open={open === item.media_id}
                     onToggle={() => setOpen(open === item.media_id ? null : item.media_id)}
+                    onTranscribe={onTranscribe}
+                    busy={busyId === item.media_id}
+                    canTranscribe={canTranscribe}
                 />
             ))}
 
@@ -1151,7 +1202,7 @@ function WrittenScriptCard({ entry }: { entry: GeneratedScript }) {
     const script = entry.script
     if (!script) return null
 
-    const beats = script.beats ?? []
+    const paragraphs = scriptParagraphs(script)
 
     return (
         <div className="flex flex-col gap-4">
@@ -1185,18 +1236,20 @@ function WrittenScriptCard({ entry }: { entry: GeneratedScript }) {
                     </div>
                 )}
 
-                {beats.map((beat, i) => (
-                    <div key={i} className="flex gap-3.5 border-t border-border pt-3">
-                        <span className="mono w-11 shrink-0 pt-0.5 text-[11.5px] text-muted-foreground">
-                            {beat.t ?? String(i + 1)}
-                        </span>
-                        <div className="w-px shrink-0 bg-border" />
-                        <div className="flex flex-col gap-1">
-                            <span className="text-[14px] leading-relaxed text-foreground">{beat.text}</span>
-                            {beat.dir && <span className="text-[12px] text-muted-foreground">{beat.dir}</span>}
-                        </div>
+                {/* The script itself: what you say, as prose. No timestamps and
+                    no on-screen directions — those live in the format card below. */}
+                {paragraphs.length > 0 && (
+                    <div className="flex flex-col gap-3.5 border-t border-border pt-4">
+                        {paragraphs.map((paragraph, i) => (
+                            <p
+                                key={i}
+                                className="max-w-[68ch] whitespace-pre-line text-[15px] leading-[1.7] text-foreground"
+                            >
+                                {paragraph}
+                            </p>
+                        ))}
                     </div>
-                ))}
+                )}
 
                 {(script.caption || script.cta || script.hashtags?.length) && (
                     <div className="grid gap-4 border-t border-border pt-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
@@ -1271,16 +1324,22 @@ function WrittenScriptCard({ entry }: { entry: GeneratedScript }) {
     )
 }
 
-function WriterTab({ userId }: { userId: string }) {
+function WriterTab({ userId, openScript, onScriptsChanged }: {
+    userId: string
+    /** A script picked in the History tab, opened here. */
+    openScript?: GeneratedScript | null
+    onScriptsChanged?: () => void
+}) {
     const [topic, setTopic] = useState("")
     const [format, setFormat] = useState("reel")
     const [data, setData] = useState<WriterLibrary | null>(null)
     const [loading, setLoading] = useState(true)
     const [writing, setWriting] = useState(false)
     const [transcribing, setTranscribing] = useState(false)
+    const [transcribingId, setTranscribingId] = useState<string | null>(null)
     const [error, setError] = useState<string | null>(null)
     const [note, setNote] = useState<string | null>(null)
-    const [current, setCurrent] = useState<GeneratedScript | null>(null)
+    const [current, setCurrent] = useState<GeneratedScript | null>(openScript ?? null)
 
     const load = useCallback(async () => {
         if (!userId) return
@@ -1303,6 +1362,9 @@ function WriterTab({ userId }: { userId: string }) {
 
     useEffect(() => { load() }, [load])
 
+    // Opening a script from History selects it here.
+    useEffect(() => { if (openScript) setCurrent(openScript) }, [openScript])
+
     const write = async () => {
         if (writing) return
         setWriting(true)
@@ -1319,6 +1381,8 @@ function WriterTab({ userId }: { userId: string }) {
             else {
                 setCurrent(body)
                 setData(prev => (prev ? { ...prev, scripts: [body, ...prev.scripts] } : prev))
+                // It is saved server-side; tell History so it shows up there too.
+                onScriptsChanged?.()
             }
         } catch {
             setError("Could not write the script — check your connection and try again")
@@ -1327,25 +1391,34 @@ function WriterTab({ userId }: { userId: string }) {
         }
     }
 
-    const transcribe = async () => {
-        if (transcribing) return
-        setTranscribing(true)
+    /** `mediaIds` transcribes exactly those reels; omitted means "the next batch". */
+    const runTranscription = async (mediaIds?: string[]) => {
+        if (transcribing || transcribingId) return
+        if (mediaIds?.length) setTranscribingId(mediaIds[0])
+        else setTranscribing(true)
         setError(null)
         setNote(null)
         try {
             const res = await fetch("/api/ai/writer", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ userId, mode: "transcribe" }),
+                body: JSON.stringify({ userId, mode: "transcribe", mediaIds }),
             })
             const body = await res.json()
             if (!res.ok) setError(body?.error || "Transcription failed")
             else {
+                const done = body.transcribedNow ?? 0
                 setNote(
-                    body.transcribedNow
-                        ? `Transcribed ${body.transcribedNow} reel${body.transcribedNow === 1 ? "" : "s"}.` +
-                          (body.missing ? ` ${body.missing} still to go — run it again.` : "")
-                        : body.notes?.[0] || "Nothing new to transcribe.",
+                    done > 0
+                        ? `Transcribed ${done} reel${done === 1 ? "" : "s"}.` +
+                          (body.missing ? ` ${body.missing} still to go.` : "")
+                        // No work done is worth explaining precisely — "nothing to
+                        // transcribe" next to a list of untranscribed reels is what
+                        // made this button look broken.
+                        : body.notes?.[0] ||
+                          (mediaIds?.length
+                              ? "That reel could not be transcribed — Instagram returned no downloadable video for it."
+                              : "Nothing new to transcribe."),
                 )
                 await load()
             }
@@ -1353,17 +1426,23 @@ function WriterTab({ userId }: { userId: string }) {
             setError("Transcription failed — check your connection and try again")
         } finally {
             setTranscribing(false)
+            setTranscribingId(null)
         }
     }
+
+    const transcribe = () => runTranscription()
+    const transcribeOne = (mediaId: string) => runTranscription([mediaId])
 
     const remove = async (id: string) => {
         await fetch(`/api/ai/writer?id=${id}`, { method: "DELETE" })
         setData(prev => (prev ? { ...prev, scripts: prev.scripts.filter(s => s.id !== id) } : prev))
         setCurrent(prev => (prev?.id === id ? null : prev))
+        onScriptsChanged?.()
     }
 
     const library = data?.library ?? []
     const transcribed = data?.transcribed ?? 0
+    const failed = data?.failed ?? 0
     const missing = Math.max(0, (data?.reelsTotal ?? 0) - transcribed)
     const saved = data?.scripts ?? []
 
@@ -1440,12 +1519,23 @@ function WriterTab({ userId }: { userId: string }) {
                         {missing > 0 && (
                             <button
                                 onClick={transcribe}
-                                disabled={transcribing || !data?.canTranscribe}
+                                disabled={transcribing || Boolean(transcribingId) || !data?.canTranscribe}
                                 className="flex items-center justify-center gap-2 rounded-lg border border-border bg-background px-3.5 py-2.5 text-[12.5px] text-foreground transition-colors hover:bg-muted disabled:opacity-40"
                             >
                                 {transcribing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mic className="h-3.5 w-3.5" />}
-                                {transcribing ? "Transcribing…" : `Transcribe ${Math.min(missing, 8)} more`}
+                                {transcribing
+                                    ? "Transcribing…"
+                                    : failed >= missing
+                                        ? `Retry ${Math.min(missing, 8)} failed`
+                                        : `Transcribe ${Math.min(missing, 8)} more`}
                             </button>
+                        )}
+
+                        {failed > 0 && (
+                            <span className="text-[11.5px] leading-relaxed text-muted-foreground">
+                                {failed} reel{failed === 1 ? "" : "s"} failed before — open one in the list below to
+                                see why, or transcribe it on its own row.
+                            </span>
                         )}
 
                         {data && !data.canTranscribe && (
@@ -1505,7 +1595,13 @@ function WriterTab({ userId }: { userId: string }) {
                 )}
             </div>
 
-            <TranscriptLibrary items={library} loading={loading && !data} />
+            <TranscriptLibrary
+                items={library}
+                loading={loading && !data}
+                onTranscribe={transcribeOne}
+                busyId={transcribingId}
+                canTranscribe={Boolean(data?.canTranscribe)}
+            />
         </div>
     )
 }
@@ -1514,14 +1610,109 @@ function WriterTab({ userId }: { userId: string }) {
 // History tab
 // ------------------------------------------------------------
 
-function HistoryTab({
+/** Saved scripts, newest first. Clicking one opens it in the Script writer. */
+function ScriptHistory({
+    scripts, onOpen, onDelete,
+}: {
+    scripts: GeneratedScript[]
+    onOpen: (script: GeneratedScript) => void
+    onDelete: (id: string) => void
+}) {
+    const [limit, setLimit] = useState(8)
+
+    if (!scripts.length) {
+        return (
+            <div className={`${CARD} flex min-h-[120px] items-center justify-center p-8`}>
+                <span className="text-[13px] text-muted-foreground">
+                    No scripts yet — write one in Script writer and it&apos;ll be saved here.
+                </span>
+            </div>
+        )
+    }
+
+    const GRID = "grid gap-3.5 grid-cols-[46px_minmax(0,1fr)_110px] md:grid-cols-[46px_minmax(0,1fr)_110px_90px_150px]"
+    const shown = scripts.slice(0, limit)
+
+    return (
+        <div className={`${CARD} overflow-hidden`}>
+            <div className="flex items-center justify-between border-b border-border bg-muted/40 px-5 py-3.5">
+                <span className={EYEBROW}>Scripts written · last 20</span>
+                <span className="text-[12px] text-muted-foreground">Open one to read it in the writer</span>
+            </div>
+
+            <div className={`${GRID} ${MICRO} items-center border-b border-border px-5 py-3 text-muted-foreground`}>
+                <span>Script</span>
+                <span>Title</span>
+                <span className="hidden md:block">Format</span>
+                <span className="hidden md:block">Transcripts</span>
+                <span className="text-right">Written</span>
+            </div>
+
+            {shown.map((item, i) => (
+                <div
+                    key={item.id}
+                    onClick={() => onOpen(item)}
+                    className={`${GRID} cursor-pointer items-center border-b border-border px-5 py-3.5 transition-colors last:border-b-0 hover:bg-muted/60`}
+                >
+                    <span className={`mono text-[12.5px] ${i === 0 ? "text-foreground" : "text-muted-foreground"}`}>
+                        #{scripts.length - i}
+                    </span>
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                        <span className="truncate text-[13.5px] text-foreground">
+                            {item.script?.title || item.topic || "Untitled script"}
+                        </span>
+                        {item.script?.hook && (
+                            <span className="truncate text-[12px] text-muted-foreground">{item.script.hook}</span>
+                        )}
+                    </div>
+                    <span className="mono hidden truncate text-[12.5px] uppercase text-muted-foreground md:block">
+                        {item.format || "reel"}
+                    </span>
+                    <span className="mono hidden text-[12.5px] text-muted-foreground md:block">
+                        {item.transcripts_used}
+                    </span>
+                    <div className="flex items-center justify-end gap-3">
+                        <span className="whitespace-nowrap text-[12.5px] text-muted-foreground">
+                            {new Date(item.created_at).toLocaleDateString()}
+                        </span>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onOpen(item) }}
+                            title="Open this script"
+                            className="text-muted-foreground transition-colors hover:text-foreground"
+                        >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onDelete(item.id) }}
+                            title="Delete"
+                            className="text-muted-foreground transition-colors hover:text-destructive"
+                        >
+                            <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                    </div>
+                </div>
+            ))}
+
+            <div className="flex items-center justify-between px-5 py-3.5 text-[12.5px] text-muted-foreground">
+                <span>{shown.length} of {scripts.length} scripts shown</span>
+                {limit < scripts.length && (
+                    <button onClick={() => setLimit(scripts.length)} className="text-foreground hover:underline">
+                        Load more ↓
+                    </button>
+                )}
+            </div>
+        </div>
+    )
+}
+
+function PlanHistory({
     history, onOpen, onDelete,
 }: { history: ContentPlan[]; onOpen: (plan: ContentPlan) => void; onDelete: (id: string) => void }) {
     const [limit, setLimit] = useState(8)
 
     if (!history.length) {
         return (
-            <div className={`${CARD} flex min-h-[180px] items-center justify-center p-8`}>
+            <div className={`${CARD} flex min-h-[120px] items-center justify-center p-8`}>
                 <span className="text-[13px] text-muted-foreground">
                     No saved plans yet — generate one and it&apos;ll appear here.
                 </span>
@@ -1601,6 +1792,55 @@ function HistoryTab({
     )
 }
 
+/**
+ * Everything the studio has produced: idea plans and written scripts. Both are
+ * saved server-side, so this is the one place to find work from an earlier
+ * session regardless of which tab made it.
+ */
+function HistoryTab({
+    history, scripts, onOpen, onDelete, onOpenScript, onDeleteScript,
+}: {
+    history: ContentPlan[]
+    scripts: GeneratedScript[]
+    onOpen: (plan: ContentPlan) => void
+    onDelete: (id: string) => void
+    onOpenScript: (script: GeneratedScript) => void
+    onDeleteScript: (id: string) => void
+}) {
+    const [section, setSection] = useState<"plans" | "scripts">("plans")
+
+    const TAB = "rounded-[7px] px-3 py-1.5 text-[12.5px] transition-colors"
+
+    return (
+        <div className="flex flex-col gap-4">
+            <div className="flex gap-1 self-start rounded-[9px] border border-border bg-card p-1">
+                {([
+                    ["plans", `Idea plans (${history.length})`],
+                    ["scripts", `Scripts (${scripts.length})`],
+                ] as ["plans" | "scripts", string][]).map(([id, name]) => (
+                    <button
+                        key={id}
+                        onClick={() => setSection(id)}
+                        className={`${TAB} ${
+                            section === id
+                                ? "bg-foreground font-semibold text-background"
+                                : "text-muted-foreground hover:text-foreground"
+                        }`}
+                    >
+                        {name}
+                    </button>
+                ))}
+            </div>
+
+            {section === "plans" ? (
+                <PlanHistory history={history} onOpen={onOpen} onDelete={onDelete} />
+            ) : (
+                <ScriptHistory scripts={scripts} onOpen={onOpenScript} onDelete={onDeleteScript} />
+            )}
+        </div>
+    )
+}
+
 // ------------------------------------------------------------
 // Root
 // ------------------------------------------------------------
@@ -1626,6 +1866,8 @@ export function ContentStudio({ userId }: { userId: string }) {
 
     const [plan, setPlan] = useState<ContentPlan | null>(null)
     const [history, setHistory] = useState<ContentPlan[]>([])
+    const [scripts, setScripts] = useState<GeneratedScript[]>([])
+    const [openScript, setOpenScript] = useState<GeneratedScript | null>(null)
     const [openIdea, setOpenIdea] = useState(0)
 
     const loadHistory = useCallback(async () => {
@@ -1641,7 +1883,25 @@ export function ContentStudio({ userId }: { userId: string }) {
         } catch { /* history is a nicety — don't surface */ }
     }, [userId])
 
+    // Scripts only — the writer's own GET also builds the reference library,
+    // which costs an Instagram round trip History has no use for.
+    const loadScripts = useCallback(async () => {
+        if (!userId) return
+        try {
+            const res = await fetch(`/api/ai/writer?userId=${userId}&only=scripts`)
+            const data = await res.json()
+            if (Array.isArray(data?.scripts)) setScripts(data.scripts)
+        } catch { /* history is a nicety — don't surface */ }
+    }, [userId])
+
     useEffect(() => { loadHistory() }, [loadHistory])
+    useEffect(() => { loadScripts() }, [loadScripts])
+
+    const removeScript = async (id: string) => {
+        await fetch(`/api/ai/writer?id=${id}`, { method: "DELETE" })
+        setScripts(prev => prev.filter(s => s.id !== id))
+        setOpenScript(prev => (prev?.id === id ? null : prev))
+    }
 
     const toggleFormat = (f: string) =>
         setFormats(prev => (prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f]))
@@ -1900,15 +2160,20 @@ export function ContentStudio({ userId }: { userId: string }) {
                 </div>
             )}
 
-            {tab === "writer" && <WriterTab userId={userId} />}
+            {tab === "writer" && (
+                <WriterTab userId={userId} openScript={openScript} onScriptsChanged={loadScripts} />
+            )}
 
             {tab === "script" && <ScriptTab userId={userId} />}
 
             {tab === "history" && (
                 <HistoryTab
                     history={history}
+                    scripts={scripts}
                     onOpen={(item) => { setPlan(item); setOpenIdea(0); setTab("generate") }}
                     onDelete={remove}
+                    onOpenScript={(item) => { setOpenScript(item); setTab("writer") }}
+                    onDeleteScript={removeScript}
                 />
             )}
         </div>

@@ -34,10 +34,15 @@ export interface WriterStep {
   evidence?: string
 }
 
+/**
+ * One paragraph of the script as spoken. `t`/`dir` are only still read so that
+ * scripts saved by earlier versions keep parsing — nothing writes them now, and
+ * the script is rendered as plain prose.
+ */
 export interface WriterBeat {
   t?: string
   text: string
-  /** What is on screen while the line is spoken. */
+  /** What is on screen while the line is spoken. Legacy — no longer requested. */
   dir?: string
 }
 
@@ -108,8 +113,14 @@ HARD RULES FOR THE SCRIPT:
 - Match their opening move exactly. If their best reels open cold on a claim, do not open with a greeting.
 - Hit the first payoff no later than their own reels do. If reference 1 pays off at 0:06, yours cannot wander until 0:20.
 - Keep the word count inside the runtime at THEIR measured words-per-second. A 35-second reel at 2.8 words/sec is about 98 words — do not hand back 300.
-- Write the beats as they would be spoken, with timestamps, plus the on-screen direction for each.
 - If the topic genuinely does not fit their proven structure, still write it their way, and say what you had to bend in the notes.
+
+HOW THE SCRIPT ITSELF IS WRITTEN — THIS IS A HARD FORMAT RULE:
+Write it as PLAIN SPOKEN PROSE. The words that come out of their mouth, and nothing else. Break it into a few short paragraphs where the delivery naturally breaks — one paragraph per beat of the structure you extracted.
+- NO timestamps anywhere in the script text. Not "0:00", not "(0:03-0:08)", not "at 5 seconds".
+- NO on-screen directions, camera notes, b-roll notes, shot descriptions or stage directions. Not inline, not in brackets, not on their own line.
+- NO beat labels inside the script — do not write "HOOK:", "TURN:", "PAYOFF:" or any heading. The reader wants something they can read straight off the screen and say out loud.
+- The timing and the beat order still govern what you write: hit the payoff as early as their reels do, and keep the paragraph lengths matching their pacing. That reasoning belongs in the "structure" object, not in the script.
 
 If no transcripts were provided you cannot do this job properly: say so plainly in the notes, work from their captions and performance numbers alone, and do not claim to know how they speak.
 
@@ -131,7 +142,7 @@ Respond with ONLY a JSON object matching this shape, and nothing else — no pro
     "hook": "the first line, exactly as spoken",
     "runtime": "0:36",
     "beats": [
-      { "t": "0:00", "text": "the line as spoken", "dir": "what is on screen" }
+      { "text": "one paragraph of the script, plain spoken prose — no timestamp, no direction, no label" }
     ],
     "caption": "the caption, written the way they write captions",
     "cta": "the closing ask, phrased the way they phrase it",
@@ -318,6 +329,32 @@ function text(value: any): string | undefined {
   return s ? s : undefined
 }
 
+/**
+ * A leading `0:03`, `[0:00]`, `(0:03–0:08)` or `00:12 —` on a script line.
+ * The AM/PM guard keeps a spoken line like "5:30 AM is when I film" intact.
+ */
+const LEADING_TIMESTAMP =
+  /^[[(]?\s*\d{1,2}:\d{2}(?!\s*[AaPp][Mm]\b)\s*(?:[-–—]\s*\d{1,2}:\d{2}\s*)?[\])]?\s*[-–—:]?\s*/
+/** A leading beat label the model bolted on: `HOOK:`, `THE TURN —`. */
+const LEADING_LABEL = /^[A-Z][A-Z0-9 '/]{1,24}\s*[:—–-]\s+/
+/** A whole line that is only a stage direction: `(cut to b-roll)`, `[text on screen]`. */
+const DIRECTION_ONLY = /^[[(][^)\]]*[)\]]\s*$/
+
+/**
+ * The script is meant to read as something you can say straight off the screen,
+ * so timestamps, beat labels and stage directions are stripped even when the
+ * model slips them in against the prompt.
+ */
+function plainSpoken(value: string): string {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && !DIRECTION_ONLY.test(line))
+    .map((line) => line.replace(LEADING_TIMESTAMP, "").replace(LEADING_LABEL, "").trim())
+    .filter(Boolean)
+    .join("\n")
+}
+
 export function normalizeWriterResult(parsed: any): ScriptWriterResult {
   const rawStructure = parsed?.structure ?? {}
 
@@ -332,22 +369,21 @@ export function normalizeWriterResult(parsed: any): ScriptWriterResult {
 
   const rawScript = parsed?.script ?? {}
 
+  // Paragraphs of plain spoken script. Timestamps and on-screen directions are
+  // dropped here rather than at render time, so what is stored is what is read.
   const beats: WriterBeat[] = (Array.isArray(rawScript.beats) ? rawScript.beats : [])
     .map((beat: any) => {
       // Beats occasionally come back as bare strings; a script that renders is
       // worth more than a strict shape.
-      if (typeof beat === "string") return { text: beat.trim() }
-      return {
-        t: text(beat?.t ?? beat?.time),
-        text: String(beat?.text ?? beat?.line ?? "").trim(),
-        dir: text(beat?.dir ?? beat?.direction ?? beat?.visual),
-      }
+      const raw = typeof beat === "string" ? beat : String(beat?.text ?? beat?.line ?? "")
+      return { text: plainSpoken(raw) }
     })
     .filter((beat: WriterBeat) => beat.text.length > 0)
 
   // The hook is the first spoken line, so falling back to beat one is right
   // rather than leaving the headline empty when the model omits the field.
-  const hook = text(rawScript.hook) ?? beats[0]?.text ?? ""
+  const hookText = text(rawScript.hook)
+  const hook = (hookText ? plainSpoken(hookText) : "") || beats[0]?.text?.split("\n")[0] || ""
 
   return {
     structure: {
@@ -403,16 +439,12 @@ export async function generateNextScript(
   }
 }
 
-/** The script as one plain block, for the copy button. */
+/** The script as one plain block, for the copy button — prose, nothing else. */
 export function writtenScriptToText(script: WrittenScript): string {
   return [
     script.title,
-    script.runtime ? `RUNTIME: ${script.runtime}` : "",
     "",
-    ...script.beats.map((beat, i) => {
-      const label = beat.t ?? String(i + 1)
-      return beat.dir ? `${label}  ${beat.text}\n      (${beat.dir})` : `${label}  ${beat.text}`
-    }),
+    script.beats.map((beat) => beat.text).join("\n\n"),
     "",
     script.caption ? `CAPTION:\n${script.caption}` : "",
     script.cta ? `\nCTA: ${script.cta}` : "",
