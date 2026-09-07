@@ -276,6 +276,55 @@ Respond with ONLY a JSON object matching this shape, and nothing else — no pro
 
 Return exactly one entry in "posts" for every post you were given, using the "index" number shown in the list.`
 
+/**
+ * The shape above, as a schema the provider enforces during generation.
+ *
+ * The system prompt still describes it, because the prompt is what says what
+ * each field should CONTAIN — but the schema is what makes the reply parseable.
+ * Asking for JSON in prose left every run one stray sentence, one code fence or
+ * one trailing comma away from a total loss, and the loss landed after the
+ * tokens were already spent. Every field is required: strict schemas take no
+ * optionals, and a model that must fill `next` writes a better one than a model
+ * that may skip it.
+ */
+const ANALYSIS_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  additionalProperties: false,
+  required: ["summary", "posts"],
+  properties: {
+    summary: {
+      type: "object",
+      additionalProperties: false,
+      required: ["headline", "what_is_working", "what_to_improve", "next_post"],
+      properties: {
+        headline: { type: "string" },
+        what_is_working: { type: "array", items: { type: "string" } },
+        what_to_improve: { type: "array", items: { type: "string" } },
+        next_post: { type: "string" },
+      },
+    },
+    posts: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["index", "score", "verdict", "working", "improve", "tags", "next", "lift", "lift_note"],
+        properties: {
+          index: { type: "integer" },
+          score: { type: "integer" },
+          verdict: { type: "string" },
+          working: { type: "array", items: { type: "string" } },
+          improve: { type: "array", items: { type: "string" } },
+          tags: { type: "array", items: { type: "string" } },
+          next: { type: "string" },
+          lift: { type: "string" },
+          lift_note: { type: "string" },
+        },
+      },
+    },
+  },
+}
+
 // Timestamps cost ~7 characters a line, so the cap is a little higher than it
 // was to keep the same amount of actual speech in the prompt.
 const TRANSCRIPT_CHARS = 1400
@@ -436,6 +485,8 @@ export async function generateDeepAnalysis(
     maxTokens: 32000,
     // Ranking a whole period against itself is reasoning, not recall.
     effort: "high",
+    // The reply is generated against this, not merely checked against it.
+    jsonSchema: ANALYSIS_SCHEMA,
   })
 
   if (!result.ok || !result.text) {
@@ -461,7 +512,17 @@ export async function generateDeepAnalysis(
     // the last cut-off entry means paying for the call twice.
     return { ok: true, result: analysis }
   } catch (e: any) {
-    console.error("[analysis] Could not parse model output:", e?.message)
+    // The message alone never said what actually came back, which is the only
+    // thing worth knowing here. Both ends of the reply: the start shows whether
+    // it is prose or JSON, the end shows whether it was cut off.
+    const text = result.text
+    console.error(
+      "[analysis] Could not parse model output:",
+      e?.message,
+      `\n  length: ${text.length}, truncated: ${Boolean(result.truncated)}`,
+      `\n  starts: ${JSON.stringify(text.slice(0, 300))}`,
+      `\n  ends:   ${JSON.stringify(text.slice(-300))}`,
+    )
     return {
       ok: false,
       error: result.truncated
