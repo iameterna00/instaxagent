@@ -436,7 +436,67 @@ export function extractJson(raw: string): any {
       if (depth === 0) return JSON.parse(text.slice(start, i + 1))
     }
   }
-  throw new Error("Model returned truncated JSON")
+
+  // No matching close brace: the model ran out of tokens mid-object. The call
+  // has already been paid for, so salvage the entries that did complete rather
+  // than discard all of them.
+  return repairTruncatedJson(text, start)
+}
+
+/**
+ * Parse a JSON object that stops mid-way by cutting at the last COMPLETE value
+ * and closing whatever brackets are still open there.
+ *
+ * "Complete" is the whole trick. Cutting anywhere else produces a different
+ * kind of broken — a dangling key, half a number, an unterminated string — so
+ * the walk records a safe cut point only just past a value that finished, and
+ * remembers the bracket stack as it stood at that moment.
+ */
+function repairTruncatedJson(text: string, start: number): any {
+  const stack: string[] = []
+  let inString = false
+  let escaped = false
+  let cut = -1
+  let cutStack: string[] = []
+
+  const markSafe = (index: number) => {
+    cut = index
+    cutStack = [...stack]
+  }
+
+  for (let i = start; i < text.length; i++) {
+    const char = text[i]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (char === "\\") {
+      escaped = true
+      continue
+    }
+    if (char === '"') {
+      inString = !inString
+      // A string that a colon follows is a key, and a key alone is not a value
+      // — cutting after it would leave `{"working"` to be closed into nonsense.
+      if (!inString && text.slice(i + 1).trimStart()[0] !== ":") markSafe(i + 1)
+      continue
+    }
+    if (inString) continue
+
+    if (char === "{" || char === "[") stack.push(char === "{" ? "}" : "]")
+    else if (char === "}" || char === "]") {
+      stack.pop()
+      markSafe(i + 1)
+    } else if (/[\w.]/.test(char) && !/[\w.]/.test(text[i + 1] ?? "")) {
+      // End of a bare number, true, false or null.
+      markSafe(i + 1)
+    }
+  }
+
+  if (cut === -1 || !cutStack.length) throw new Error("Model returned truncated JSON")
+
+  const body = text.slice(start, cut).replace(/,\s*$/, "")
+  return JSON.parse(body + cutStack.reverse().join(""))
 }
 
 /**

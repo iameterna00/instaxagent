@@ -37,6 +37,12 @@ export interface GenerateResult {
   ok: boolean
   text?: string
   error?: string
+  /**
+   * The model hit `max_tokens` and was cut off mid-sentence. The text is still
+   * returned — a caller parsing JSON can salvage the complete entries rather
+   * than throw away a call that has already been paid for.
+   */
+  truncated?: boolean
 }
 
 // The `effort` control only exists on the Claude 5 family — sending it to
@@ -97,7 +103,14 @@ async function generateAnthropic(opts: {
     ;(params as any).output_config = { effort: opts.effort }
   }
 
-  const response = await client.messages.create(params)
+  // Thinking tokens are billed against max_tokens on the Claude 5 family, so a
+  // long answer can run for minutes. A non-streaming request that long trips
+  // the SDK's HTTP timeout and the whole call is lost after being paid for —
+  // stream anything with real room to breathe and let the SDK reassemble it.
+  const response =
+    opts.maxTokens > 8000
+      ? await client.messages.stream(params).finalMessage()
+      : await client.messages.create(params)
 
   // Safety classifiers can decline a request — this comes back as a normal 200,
   // so check stop_reason before touching content.
@@ -111,8 +124,19 @@ async function generateAnthropic(opts: {
     .join("")
     .trim()
 
-  if (!text) return { ok: false, error: "Empty response from Claude" }
-  return { ok: true, text }
+  if (!text) {
+    // An empty answer under a max_tokens stop means thinking consumed the whole
+    // budget. Saying so beats "Empty response", which reads like a fluke.
+    return {
+      ok: false,
+      error:
+        response.stop_reason === "max_tokens"
+          ? "The model spent its whole token budget thinking and never answered — lower the effort or raise max tokens."
+          : "Empty response from Claude",
+    }
+  }
+
+  return { ok: true, text, truncated: response.stop_reason === "max_tokens" }
 }
 
 // ------------------------------------------------------------
@@ -152,7 +176,8 @@ async function generateOpenAiCompatible(opts: {
     return { ok: false, error: detail }
   }
 
-  const text = String(json?.choices?.[0]?.message?.content ?? "").trim()
+  const choice = json?.choices?.[0]
+  const text = String(choice?.message?.content ?? "").trim()
   if (!text) return { ok: false, error: `Empty response from ${opts.provider}` }
-  return { ok: true, text }
+  return { ok: true, text, truncated: choice?.finish_reason === "length" }
 }

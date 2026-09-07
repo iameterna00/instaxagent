@@ -5,6 +5,7 @@ import {
     Loader2, Wand2, Copy, Check, Trash2, AlertTriangle, Eye, RotateCcw, ChevronDown, ChevronUp,
     Mic, PenLine,
 } from "lucide-react"
+import { cacheClear, cacheRead, cacheWrite } from "@/lib/client-cache"
 import { archetypeLabel, pillarSpread } from "@/lib/ai/content"
 import type { ContentIdea, ContentAnalysis, OwnPost, ScriptBeat } from "@/lib/ai/content"
 import type { ScriptLine, ScriptScore, RewriteBeat, ScriptTone } from "@/lib/ai/script"
@@ -594,13 +595,24 @@ function ScriptTab({ userId }: { userId: string }) {
     // Last analysis, so the tab has something to show before a fresh run.
     useEffect(() => {
         if (!userId) return
+
+        const apply = (latest: any) => {
+            if (!latest) return
+            setResult(latest)
+            // Only seed the box while it is untouched — a revalidation landing
+            // mid-edit must not overwrite what is being typed.
+            setScript(current => current || latest.script || "")
+            if (latest.format) setFormat(current => current === "reel" ? latest.format : current)
+        }
+
+        apply(cacheRead<any[]>(`script:${userId}`)?.[0])
+
         fetch(`/api/ai/script?userId=${userId}`)
             .then(r => r.json())
             .then(data => {
-                if (Array.isArray(data) && data[0]) {
-                    setResult(data[0])
-                    setScript(data[0].script ?? "")
-                    if (data[0].format) setFormat(data[0].format)
+                if (Array.isArray(data)) {
+                    cacheWrite(`script:${userId}`, data)
+                    apply(data[0])
                 }
             })
             .catch(() => { /* first run has nothing saved */ })
@@ -621,7 +633,10 @@ function ScriptTab({ userId }: { userId: string }) {
             })
             const data = await res.json()
             if (!res.ok) setError(data?.error || "Analysis failed")
-            else setResult(data)
+            else {
+                setResult(data)
+                cacheClear(`script:${userId}`)
+            }
         } catch {
             setError("Analysis failed — check your connection and try again")
         } finally {
@@ -1330,10 +1345,14 @@ function WriterTab({ userId, openScript, onScriptsChanged }: {
     openScript?: GeneratedScript | null
     onScriptsChanged?: () => void
 }) {
+    // This panel's GET builds the reference library from Instagram, so it is
+    // the slowest read in the studio and the one whose spinner was most felt on
+    // every return to the tab. Mount from the cache when there is one.
+    const cacheKey = `writer:${userId}`
     const [topic, setTopic] = useState("")
     const [format, setFormat] = useState("reel")
-    const [data, setData] = useState<WriterLibrary | null>(null)
-    const [loading, setLoading] = useState(true)
+    const [data, setData] = useState<WriterLibrary | null>(() => cacheRead<WriterLibrary>(cacheKey) ?? null)
+    const [loading, setLoading] = useState(() => !cacheRead(cacheKey))
     const [writing, setWriting] = useState(false)
     const [transcribing, setTranscribing] = useState(false)
     const [transcribingId, setTranscribingId] = useState<string | null>(null)
@@ -1343,12 +1362,15 @@ function WriterTab({ userId, openScript, onScriptsChanged }: {
 
     const load = useCallback(async () => {
         if (!userId) return
-        setLoading(true)
+        // A revalidation behind cached content must not blank the panel — only
+        // a cold mount has nothing to show while it waits.
+        if (!cacheRead(`writer:${userId}`)) setLoading(true)
         try {
             const res = await fetch(`/api/ai/writer?userId=${userId}`)
             const body = await res.json()
             if (!res.ok) setError(body?.error || "Could not read your transcripts")
             else {
+                cacheWrite(`writer:${userId}`, body)
                 setData(body)
                 // Show the last script on arrival rather than an empty panel.
                 setCurrent(existing => existing ?? body.scripts?.[0] ?? null)
@@ -1380,7 +1402,13 @@ function WriterTab({ userId, openScript, onScriptsChanged }: {
             if (!res.ok) setError(body?.error || "Could not write the script")
             else {
                 setCurrent(body)
-                setData(prev => (prev ? { ...prev, scripts: [body, ...prev.scripts] } : prev))
+                setData(prev => {
+                    const next = prev ? { ...prev, scripts: [body, ...prev.scripts] } : prev
+                    // Keep the cache level with the panel, or coming back to the
+                    // tab would show a library missing the script just written.
+                    if (next) cacheWrite(`writer:${userId}`, next)
+                    return next
+                })
                 // It is saved server-side; tell History so it shows up there too.
                 onScriptsChanged?.()
             }
@@ -1435,7 +1463,11 @@ function WriterTab({ userId, openScript, onScriptsChanged }: {
 
     const remove = async (id: string) => {
         await fetch(`/api/ai/writer?id=${id}`, { method: "DELETE" })
-        setData(prev => (prev ? { ...prev, scripts: prev.scripts.filter(s => s.id !== id) } : prev))
+        setData(prev => {
+            const next = prev ? { ...prev, scripts: prev.scripts.filter(s => s.id !== id) } : prev
+            if (next) cacheWrite(`writer:${userId}`, next)
+            return next
+        })
         setCurrent(prev => (prev?.id === id ? null : prev))
         onScriptsChanged?.()
     }
@@ -1864,9 +1896,14 @@ export function ContentStudio({ userId }: { userId: string }) {
     const [check, setCheck] = useState<AccessCheck | null>(null)
     const [checkedAt, setCheckedAt] = useState<Date | null>(null)
 
-    const [plan, setPlan] = useState<ContentPlan | null>(null)
-    const [history, setHistory] = useState<ContentPlan[]>([])
-    const [scripts, setScripts] = useState<GeneratedScript[]>([])
+    // Seeded from the cache so re-entering the studio opens on the last plan
+    // instead of an empty shell that fills in a moment later.
+    const cachedPlans = cacheRead<ContentPlan[]>(`content:${userId}`)
+    const [plan, setPlan] = useState<ContentPlan | null>(cachedPlans?.[0] ?? null)
+    const [history, setHistory] = useState<ContentPlan[]>(cachedPlans ?? [])
+    const [scripts, setScripts] = useState<GeneratedScript[]>(
+        () => cacheRead<GeneratedScript[]>(`scripts:${userId}`) ?? [],
+    )
     const [openScript, setOpenScript] = useState<GeneratedScript | null>(null)
     const [openIdea, setOpenIdea] = useState(0)
 
@@ -1876,6 +1913,7 @@ export function ContentStudio({ userId }: { userId: string }) {
             const res = await fetch(`/api/ai/content?userId=${userId}`)
             const data = await res.json()
             if (Array.isArray(data)) {
+                cacheWrite(`content:${userId}`, data)
                 setHistory(data)
                 // Show the newest plan on arrival rather than an empty studio.
                 setPlan(current => current ?? data[0] ?? null)
@@ -1890,7 +1928,10 @@ export function ContentStudio({ userId }: { userId: string }) {
         try {
             const res = await fetch(`/api/ai/writer?userId=${userId}&only=scripts`)
             const data = await res.json()
-            if (Array.isArray(data?.scripts)) setScripts(data.scripts)
+            if (Array.isArray(data?.scripts)) {
+                cacheWrite(`scripts:${userId}`, data.scripts)
+                setScripts(data.scripts)
+            }
         } catch { /* history is a nicety — don't surface */ }
     }, [userId])
 
@@ -1899,8 +1940,15 @@ export function ContentStudio({ userId }: { userId: string }) {
 
     const removeScript = async (id: string) => {
         await fetch(`/api/ai/writer?id=${id}`, { method: "DELETE" })
-        setScripts(prev => prev.filter(s => s.id !== id))
+        setScripts(prev => {
+            const next = prev.filter(s => s.id !== id)
+            cacheWrite(`scripts:${userId}`, next)
+            return next
+        })
         setOpenScript(prev => (prev?.id === id ? null : prev))
+        // The writer panel holds its own copy of this list; drop it rather than
+        // let that tab reopen showing a script History has already deleted.
+        cacheClear(`writer:${userId}`)
     }
 
     const toggleFormat = (f: string) =>

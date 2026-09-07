@@ -644,6 +644,9 @@ export function DeepAnalysis({ userId }: { userId: string }) {
     const [stale, setStale] = useState(false)
     const [newPosts, setNewPosts] = useState(0)
     const [autoRefreshed, setAutoRefreshed] = useState(false)
+    // Why the numbers on screen are not moving. The silent pass has no toast to
+    // put this in, and frozen metrics with no explanation read as a dead page.
+    const [refreshNote, setRefreshNote] = useState<string | null>(null)
 
     const [search, setSearch] = useState("")
     const [format, setFormat] = useState<PostFormat | "ALL">("ALL")
@@ -725,16 +728,28 @@ export function DeepAnalysis({ userId }: { userId: string }) {
             setNewPosts(data.new_posts ?? 0)
             setStale(Boolean(data.changed) || (data.new_posts ?? 0) > 0)
 
-            if (!silent) {
-                toast.success(
-                    data.new_posts > 0
-                        ? `Metrics updated · ${data.new_posts} new post${data.new_posts === 1 ? "" : "s"} not analysed yet`
-                        : "Metrics updated",
+            // Instagram returning no insights is the one way this call succeeds
+            // and still leaves every number exactly where it was.
+            if (data.insights === false) {
+                setRefreshNote(
+                    "Instagram returned no view or reach data on this pass — the numbers below are the ones from the last analysis. Reconnect the account if this keeps happening.",
                 )
+                if (!silent) toast.error("Instagram returned no metrics — reconnect the account")
+            } else {
+                setRefreshNote(null)
+                if (!silent) {
+                    toast.success(
+                        data.new_posts > 0
+                            ? `Metrics updated · ${data.new_posts} new post${data.new_posts === 1 ? "" : "s"} not analysed yet`
+                            : "Metrics updated",
+                    )
+                }
             }
         } catch (e: any) {
-            // The auto-pass is an extra on top of a page that already renders,
-            // so it fails quietly; an explicit click deserves an answer.
+            // The auto-pass has no toast to fail into, so it leaves a note on
+            // the page instead — silent used to mean invisible, which is what
+            // made frozen numbers look like a bug rather than a failed fetch.
+            setRefreshNote(e.message || "Could not refresh the metrics")
             if (!silent) toast.error(e.message || "Could not refresh the metrics")
         } finally {
             setRefreshing(false)
@@ -960,6 +975,15 @@ export function DeepAnalysis({ userId }: { userId: string }) {
                             2. Log out and reconnect Instagram so the new token carries it, then re-run.
                         </span>
                     </span>
+                </div>
+            )}
+
+            {/* Only when the permission banner above is not already explaining
+                it — two warnings about the same frozen numbers is noise. */}
+            {refreshNote && saved.has_insights && (
+                <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-[12px] text-muted-foreground">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+                    <span>{refreshNote}</span>
                 </div>
             )}
 

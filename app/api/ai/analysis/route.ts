@@ -67,15 +67,25 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Instagram not connected" }, { status: 401 })
     }
 
+    const savedPosts: any[] = Array.isArray(row.posts) ? row.posts : []
+
+    // The saved analysis can be wider than one page of media. Asking for only
+    // the default 25 would silently freeze every row past that — they would
+    // simply never appear in `live` and so never be re-pointed at fresh numbers.
     const [live, account] = await Promise.all([
-      fetchOwnPosts(user.access_token),
+      fetchOwnPosts(user.access_token, Math.max(25, savedPosts.length + 5)),
       fetchAccountSnapshot(user.access_token),
     ])
 
-    const { granted } = await attachInsights(user.access_token, live)
+    const { granted, firstError } = await attachInsights(user.access_token, live)
+    if (!granted) {
+      console.warn(
+        "[analysis] refresh got no insights back — views and reach cannot move:",
+        JSON.stringify(firstError ?? "no error reported"),
+      )
+    }
 
     const bySavedId = new Map(live.filter((p) => p.id).map((p) => [p.id!, p]))
-    const savedPosts: any[] = Array.isArray(row.posts) ? row.posts : []
     const savedIds = new Set(savedPosts.map((p) => p?.id).filter(Boolean))
 
     let changed = false
@@ -128,7 +138,10 @@ export async function PATCH(request: NextRequest) {
       .single()
 
     if (error) throw error
-    return NextResponse.json({ analysis: data, changed, new_posts: newPosts })
+    // `insights` reports this pass specifically, not the sticky `has_insights`
+    // column — a refresh that moved nothing because Instagram returned no
+    // metrics must not be announced as "Metrics updated".
+    return NextResponse.json({ analysis: data, changed, new_posts: newPosts, insights: granted })
   } catch (error: any) {
     console.error("[analysis] PATCH error:", error)
     return NextResponse.json({ error: describeFailure(error) }, { status: 500 })

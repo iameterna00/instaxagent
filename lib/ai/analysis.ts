@@ -430,7 +430,10 @@ export async function generateDeepAnalysis(
     model: settings.model,
     systemPrompt: SYSTEM_PROMPT,
     history: [{ role: "user", content: buildAnalysisPrompt(context) }],
-    maxTokens: 16000,
+    // A verdict block runs ~150 tokens and there can be 25 of them, on top of
+    // whatever the model spends thinking — which bills against the same ceiling
+    // on the Claude 5 family. 16k left it finishing mid-JSON on a full period.
+    maxTokens: 32000,
     // Ranking a whole period against itself is reasoning, not recall.
     effort: "high",
   })
@@ -439,14 +442,31 @@ export async function generateDeepAnalysis(
     return { ok: false, error: result.error || "Generation failed" }
   }
 
+  if (result.truncated) {
+    console.warn("[analysis] model hit max_tokens — salvaging the verdicts that completed")
+  }
+
   try {
     const analysis = normalizeAnalysis(extractJson(result.text), context.posts)
-    if (!analysis.posts.some((p) => p.analysis)) {
-      return { ok: false, error: "The model scored none of the posts — try again" }
+    const scored = analysis.posts.filter((p) => p.analysis).length
+    if (!scored) {
+      return {
+        ok: false,
+        error: result.truncated
+          ? "The model ran out of room before scoring anything — try a shorter period."
+          : "The model scored none of the posts — try again",
+      }
     }
+    // A run that scored most of the posts is worth keeping. Losing all of it to
+    // the last cut-off entry means paying for the call twice.
     return { ok: true, result: analysis }
   } catch (e: any) {
     console.error("[analysis] Could not parse model output:", e?.message)
-    return { ok: false, error: "The model's response was not valid JSON — try again" }
+    return {
+      ok: false,
+      error: result.truncated
+        ? "The model's answer was cut off before any post could be read — try again."
+        : "The model's response was not valid JSON — try again",
+    }
   }
 }
