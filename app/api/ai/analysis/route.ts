@@ -34,6 +34,13 @@ export async function GET(request: NextRequest) {
 const LIVE_METRICS = ["views", "reach", "saved", "shares", "like_count", "comments_count"] as const
 
 /**
+ * How many posts an analysis covers. POST and PATCH must agree on this: if the
+ * refresh reads a wider window than the analysis wrote, every post in the gap
+ * looks brand new and the page sits permanently flagged as out of date.
+ */
+const ANALYSIS_WINDOW = 60
+
+/**
  * Refresh the numbers only — views, reach, engagement rate and followers — on
  * the latest saved analysis. No model call: the verdicts stay exactly as they
  * were, only the metrics they sit next to move. Returns whether anything
@@ -69,18 +76,18 @@ export async function PATCH(request: NextRequest) {
 
     const savedPosts: any[] = Array.isArray(row.posts) ? row.posts : []
 
-    // The saved analysis can be wider than one page of media. Asking for only
-    // the default 25 would silently freeze every row past that — they would
-    // simply never appear in `live` and so never be re-pointed at fresh numbers.
+    // The same window the analysis was written against — see ANALYSIS_WINDOW.
+    // Reading only the default 25 would freeze every row past that, since those
+    // posts never appear in `live` to be re-pointed at fresh numbers.
     const [live, account] = await Promise.all([
-      fetchOwnPosts(user.access_token, Math.max(25, savedPosts.length + 5)),
+      fetchOwnPosts(user.access_token, ANALYSIS_WINDOW),
       fetchAccountSnapshot(user.access_token),
     ])
 
-    const { granted, firstError } = await attachInsights(user.access_token, live)
+    const { granted, firstError, throttled } = await attachInsights(user.access_token, live)
     if (!granted) {
       console.warn(
-        "[analysis] refresh got no insights back — views and reach cannot move:",
+        `[analysis] refresh got no insights back for ${live.length} posts — views and reach cannot move:`,
         JSON.stringify(firstError ?? "no error reported"),
       )
     }
@@ -111,7 +118,21 @@ export async function PATCH(request: NextRequest) {
     // Posts published since the analysis ran. They are deliberately NOT added
     // to the table — an unscored row would break the score column — but their
     // count is what makes a full re-run worth offering.
-    const newPosts = live.filter((p) => p.id && !savedIds.has(p.id)).length
+    //
+    // Only what is genuinely NEWER counts. An unseen id is not enough on its
+    // own: the moment the refresh reads a wider window than the analysis wrote,
+    // or an old analysis is opened against a since-grown account, every post in
+    // the gap is unseen and the page would sit flagged as out of date forever.
+    const newestAnalysed = savedPosts
+      .map((p) => (p?.timestamp ? new Date(p.timestamp).getTime() : 0))
+      .reduce((a, b) => Math.max(a, b), 0)
+
+    const newPosts = live.filter(
+      (p) =>
+        p.id &&
+        !savedIds.has(p.id) &&
+        (!newestAnalysed || (p.timestamp ? new Date(p.timestamp).getTime() > newestAnalysed : false)),
+    ).length
 
     const priorAccount = row.account as AccountSnapshot | null
     const mergedAccount = account
@@ -141,7 +162,13 @@ export async function PATCH(request: NextRequest) {
     // `insights` reports this pass specifically, not the sticky `has_insights`
     // column — a refresh that moved nothing because Instagram returned no
     // metrics must not be announced as "Metrics updated".
-    return NextResponse.json({ analysis: data, changed, new_posts: newPosts, insights: granted })
+    return NextResponse.json({
+      analysis: data,
+      changed,
+      new_posts: newPosts,
+      insights: granted,
+      throttled,
+    })
   } catch (error: any) {
     console.error("[analysis] PATCH error:", error)
     return NextResponse.json({ error: describeFailure(error) }, { status: 500 })
@@ -176,7 +203,7 @@ export async function POST(request: NextRequest) {
 
     // Posts and the account snapshot are independent reads — run them together.
     const [posts, account] = await Promise.all([
-      fetchOwnPosts(user.access_token),
+      fetchOwnPosts(user.access_token, ANALYSIS_WINDOW),
       fetchAccountSnapshot(user.access_token),
     ])
 
@@ -187,12 +214,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { granted, firstError } = await attachInsights(user.access_token, posts)
+    const { granted, firstError, throttled } = await attachInsights(user.access_token, posts)
     if (!granted) {
       console.log(
-        "[analysis] no insights returned — the token likely predates instagram_business_manage_insights:",
+        `[analysis] no insights returned for ${posts.length} posts —`,
+        throttled
+          ? "Instagram is rate limiting this account:"
+          : "the token likely predates instagram_business_manage_insights:",
         JSON.stringify(firstError ?? "no error reported"),
       )
+      // Scoring a whole period with no numbers produces a caption-only reading
+      // that looks like a broken analysis. When the cause is throttling it is
+      // temporary, so refuse the spend and say when to come back instead.
+      if (throttled) {
+        return NextResponse.json(
+          {
+            error:
+              "Instagram is rate limiting this account, so no view or reach numbers came back. Wait about an hour and re-run — an analysis without metrics is not worth the tokens.",
+          },
+          { status: 429 },
+        )
+      }
     }
 
     // Transcription is best-effort and cached: it must never fail an analysis,

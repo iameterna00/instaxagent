@@ -479,10 +479,11 @@ export async function generateDeepAnalysis(
     model: settings.model,
     systemPrompt: SYSTEM_PROMPT,
     history: [{ role: "user", content: buildAnalysisPrompt(context) }],
-    // A verdict block runs ~150 tokens and there can be 25 of them, on top of
-    // whatever the model spends thinking — which bills against the same ceiling
-    // on the Claude 5 family. 16k left it finishing mid-JSON on a full period.
-    maxTokens: 32000,
+    // A verdict block runs ~150 tokens, and thinking bills against the same
+    // ceiling on the Claude 5 family. A flat budget is wrong in both directions
+    // at once — wasteful for a small account, and the reason a large one
+    // finished mid-JSON — so it scales with the number of posts being scored.
+    maxTokens: Math.min(64000, 12000 + context.posts.length * 400),
     // Ranking a whole period against itself is reasoning, not recall.
     effort: "high",
     // The reply is generated against this, not merely checked against it.

@@ -11,6 +11,7 @@ import {
     accountAverages, accountTotals, averageScore, band, compact, compareToAverage, engagementRate,
     formatLeaderboard, formatOf, scoreBands, BAND_LABEL,
 } from "@/lib/ai/analysis"
+import { cacheRead, cacheWrite } from "@/lib/client-cache"
 import { isTimed, spokenText } from "@/lib/ai/transcribe"
 import type { AnalysisSummary, AnalyzedPost, Band, PostFormat } from "@/lib/ai/analysis"
 import type { AccountSnapshot } from "@/lib/instagram-account"
@@ -630,6 +631,9 @@ function PostRow({ post, averages, transcript, open, onToggle }: {
 
 const PRESET_KEY = "deep-analysis-preset"
 
+/** How long an automatic metrics refresh stands before another may fire. */
+const AUTO_REFRESH_COOLDOWN_MS = 10 * 60_000
+
 export function DeepAnalysis({ userId }: { userId: string }) {
     const [saved, setSaved] = useState<SavedAnalysis | null>(null)
     const [transcripts, setTranscripts] = useState<Record<string, CachedTranscript>>({})
@@ -731,10 +735,17 @@ export function DeepAnalysis({ userId }: { userId: string }) {
             // Instagram returning no insights is the one way this call succeeds
             // and still leaves every number exactly where it was.
             if (data.insights === false) {
+                // Throttling and a missing permission look identical on screen —
+                // frozen numbers — but need opposite advice: wait, or reconnect.
+                const throttled = Boolean(data.throttled)
                 setRefreshNote(
-                    "Instagram returned no view or reach data on this pass — the numbers below are the ones from the last analysis. Reconnect the account if this keeps happening.",
+                    throttled
+                        ? "Instagram is rate limiting this account, so the numbers below are the ones from the last analysis. It clears on its own — try again in about an hour. Accounts with a lot of posts hit this because metrics cost one call per post."
+                        : "Instagram returned no view or reach data on this pass — the numbers below are the ones from the last analysis. Reconnect the account if this keeps happening.",
                 )
-                if (!silent) toast.error("Instagram returned no metrics — reconnect the account")
+                if (!silent) {
+                    toast.error(throttled ? "Instagram is rate limiting — try again in an hour" : "Instagram returned no metrics — reconnect the account")
+                }
             } else {
                 setRefreshNote(null)
                 if (!silent) {
@@ -756,12 +767,20 @@ export function DeepAnalysis({ userId }: { userId: string }) {
         }
     }, [userId])
 
-    // One silent refresh per visit, as soon as the saved analysis is on screen.
+    // One silent refresh per visit — but not more often than the cooldown.
+    //
+    // A refresh costs Instagram one insights call PER POST, and the per-user
+    // hourly ceiling is only a couple of hundred. Firing on every mount meant a
+    // 60-post account spent its whole allowance flipping between tabs, and then
+    // the numbers stopped moving for an hour. The button is always there for an
+    // immediate one.
     useEffect(() => {
         if (loading || !saved || autoRefreshed) return
         setAutoRefreshed(true)
+        if (cacheRead(`analysis-refreshed:${userId}`, AUTO_REFRESH_COOLDOWN_MS)) return
+        cacheWrite(`analysis-refreshed:${userId}`, Date.now())
         refreshMetrics(true)
-    }, [loading, saved, autoRefreshed, refreshMetrics])
+    }, [loading, saved, autoRefreshed, refreshMetrics, userId])
 
     const run = useCallback(async () => {
         setRunning(true)
@@ -934,7 +953,7 @@ export function DeepAnalysis({ userId }: { userId: string }) {
                     <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground">
                         <Sparkles className="h-5 w-5" strokeWidth={1.8} />
                     </div>
-                    <h2 className="text-[15px] font-medium text-foreground">Analyse your last 25 posts</h2>
+                    <h2 className="text-[15px] font-medium text-foreground">Analyse your recent posts</h2>
                     <p className="mx-auto mt-2 max-w-sm text-[13px] leading-relaxed text-muted-foreground">
                         Scores every post against the rest of your account and tells you what worked,
                         what didn&apos;t, and what to post next.
